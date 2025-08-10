@@ -1,0 +1,128 @@
+Lab 3: Running Containers with Podman
+Objectives
+By the end of this lab, you will be able to:
+
+Run containers in detached mode
+Map container ports to host ports
+Mount host directories into containers
+Assign custom names to containers
+Prerequisites
+Podman installed on your system (version 3.0+ recommended)
+Basic familiarity with command-line operations
+A Linux-based system (recommended) or Podman configured on Windows/macOS
+Lab Setup
+Verify Podman installation:
+
+podman --version
+Expected output:
+
+podman version 3.4.4
+Pull the lab container image:
+
+podman pull docker.io/library/nginx:alpine
+Task 1: Running a Container in Detached Mode
+Objective
+Learn to run containers in background (detached) mode.
+
+Steps
+Run an Nginx container in detached mode:
+
+podman run -d docker.io/library/nginx:alpine
+Verify the container is running:
+
+podman ps
+Expected output shows your running container with auto-generated name.
+
+Key Concept
+-d flag runs the container in detached mode (background)
+Troubleshooting
+If container fails to start, check logs:
+podman logs <container_id>
+Task 2: Port Mapping
+Objective
+Learn to map container ports to host ports.
+
+Steps
+Stop any running Nginx containers:
+
+podman stop $(podman ps -q)
+Run Nginx with port mapping:
+
+podman run -d -p 8080:80 docker.io/library/nginx:alpine
+Verify port mapping:
+
+podman port <container_id>
+Expected output:
+
+80/tcp -> 0.0.0.0:8080
+Test access:
+
+curl http://localhost:8080
+Should return Nginx welcome page HTML.
+
+Key Concept
+-p host_port:container_port maps ports
+Troubleshooting
+If port conflict occurs, choose a different host port
+Check used ports with:
+ss -tulnp
+Task 3: Volume Mounts
+Objective
+Learn to mount host directories into containers.
+
+Steps
+Create a host directory and sample file:
+
+mkdir ~/nginx-content
+echo "Hello from host!" > ~/nginx-content/index.html
+Run Nginx with volume mount:
+
+podman run -d -p 8081:80 -v ~/nginx-content:/usr/share/nginx/html:Z docker.io/library/nginx:alpine
+Verify the mounted content:
+
+curl http://localhost:8081
+Should return "Hello from host!"
+
+Key Concept
+-v host_path:container_path mounts volumes
+:Z flag is for SELinux context (required on RHEL-based systems)
+Troubleshooting
+Permission issues? Try:
+chcon -Rt svirt_sandbox_file_t ~/nginx-content
+Task 4: Assigning Custom Names
+Objective
+Learn to assign custom names to containers.
+
+Steps
+Run a named container:
+
+podman run -d --name my-nginx -p 8082:80 docker.io/library/nginx:alpine
+Verify using the name:
+
+podman inspect my-nginx | grep -i status
+Should show running status.
+
+Stop using the name:
+
+podman stop my-nginx
+Key Concept
+--name assigns a custom identifier
+Troubleshooting
+If name exists, either remove old container or choose new name
+Conclusion
+In this lab you have learned essential Podman container operations:
+
+Running containers in detached mode
+Mapping network ports between host and container
+Persisting data using volume mounts
+Managing containers with custom names
+These skills form the foundation for working with containers in production environments.
+
+Next Steps
+Clean up containers:
+podman rm -f $(podman ps -aq)
+Explore more Podman features:
+podman --help
+Additional Resources
+Podman Official Documentation
+Red Hat Container Training
