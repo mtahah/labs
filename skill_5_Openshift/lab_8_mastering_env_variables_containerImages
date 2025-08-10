@@ -1,0 +1,230 @@
+### **Lab 8: Mastering Environment Variables in Container Images**
+
+These revised lab notes offer enhanced clarity, more detailed explanations, and improved formatting to ensure a smoother learning experience. The core commands and concepts have been verified for accuracy.
+
+---
+
+### **Objectives**
+
+By the end of this lab, you will be able to:
+
+*   Utilize `ENV` and `ARG` instructions within a `Containerfile` to effectively manage application configuration.
+*   Define and embed default environment variables directly into your container images.
+*   Dynamically override environment variables when launching containers.
+*   Inspect the environment variables of running containers for debugging and verification.
+*   Distinguish between build-time arguments and runtime environment variables.
+
+### **Prerequisites**
+
+*   A basic understanding of the Linux command line.
+*   An installed and operational container engine such as Podman (recommended) or Docker.
+*   A simple text editor like `vim`, `nano`, or a code editor such as VS Code.
+*   Internet access to download the base container image.
+
+### **Setup Requirements**
+
+1.  **Ensure Podman is Installed:**
+    *   For RHEL, CentOS, or Fedora-based systems, you can install it using `dnf`:
+        ```bash
+        sudo dnf install -y podman
+        ```
+
+2.  **Verify the Installation:**
+    *   Check that Podman is working correctly by querying its version:
+        ```bash
+        podman --version
+        ```
+
+---
+
+### **Task 1: Defining Default Environment Variables in a Containerfile**
+
+In this task, we will embed default environment variables into an image. These variables will exist every time a container is started from this image unless they are explicitly overridden.
+
+**Subtask 1.1: Create a Project Directory and a Basic Containerfile**
+
+1.  First, create a dedicated directory for this lab to keep your work organized.
+    ```bash
+    mkdir env-lab && cd env-lab
+    ```
+
+2.  Next, create a `Containerfile` using the `cat` command with a HERE document. This file defines how your image will be built.
+    ```bash
+    cat <<EOF > Containerfile
+    # Use the Red Hat Universal Base Image 8 (Minimal) as the foundation
+    FROM registry.access.redhat.com/ubi8/ubi-minimal
+
+    # Set default environment variables
+    ENV APP_NAME="MyApp" \
+        APP_VERSION="1.0" \
+        APP_ENV="development"
+
+    # The default command to run when a container starts
+    # It will print the values of the environment variables
+    CMD echo "Running \$APP_NAME v\$APP_VERSION in \$APP_ENV mode"
+    EOF
+    ```
+
+**Subtask 1.2: Build and Run the Image**
+
+1.  Build the container image from your `Containerfile`. The `-t` flag tags the image with the name `env-demo` for easy reference.
+    ```bash
+    podman build -t env-demo .
+    ```
+
+2.  Run a container from your newly created image.
+    ```bash
+    podman run --rm env-demo
+    ```
+    *(Note: `--rm` is added to automatically remove the container after it exits.)*
+
+**Expected Output:**
+```
+Running MyApp v1.0 in development mode
+```
+
+---
+
+### **Task 2: Overriding Environment Variables at Runtime**
+
+A key feature of containers is the ability to change their behavior without rebuilding the image. Here, you'll learn how to override the default environment variables you set in Task 1.
+
+**Subtask 2.1: Override Variables Using the Command Line**
+
+You can override individual variables using the `-e` or `--env` flag.
+
+1.  Run the container again, but this time, set the `APP_ENV` to `"production"` and the `APP_VERSION` to `"2.0"`.
+    ```bash
+    podman run --rm -e APP_ENV="production" -e APP_VERSION="2.0" env-demo
+    ```
+
+**Expected Output:**
+```
+Running MyApp v2.0 in production mode
+```
+
+**Subtask 2.2: Override Variables Using an Environment File**
+
+For managing multiple variables, especially in different environments (like staging or production), using an environment file is more practical.
+
+1.  Create a file named `app.env` to store your configuration.
+    ```bash
+    cat <<EOF > app.env
+    APP_NAME=ProductionApp
+    APP_VERSION=3.0
+    APP_ENV=staging
+    EOF
+    ```
+
+2.  Now, run the container, instructing Podman to load variables from this file using the `--env-file` flag.
+    ```bash
+    podman run --rm --env-file=app.env env-demo
+    ```
+
+**Expected Output:**
+```
+Running ProductionApp v3.0 in staging mode
+```
+
+---
+
+### **Task 3: Inspecting Variables and Using Build-Time Arguments**
+
+**Subtask 3.1: View Environment Variables in a Running Container**
+
+It's often necessary to check which environment variables are active inside a running container.
+
+1.  First, run a container in detached mode (`-d`) so it runs in the background. We will also give it a name (`--name`) for easy access.
+    ```bash
+    podman run -d --name env-container env-demo sleep infinity
+    ```
+    *(Note: `sleep infinity` is used to keep the container running indefinitely.)*
+
+2.  Use the `podman exec` command to run the `env` utility inside the container, which lists all environment variables.
+    ```bash
+    podman exec env-container env
+    ```
+
+**Expected Output (you will see a partial list like this):**
+```
+...
+APP_NAME=MyApp
+APP_VERSION=1.0
+APP_ENV=development
+...
+```
+
+**Subtask 3.2: Use `ARG` for Build-Time Variables**
+
+Unlike `ENV`, `ARG` variables are only available during the image build process and do not persist in the final image unless they are also assigned to an `ENV` variable. This is useful for passing secrets or build-specific information without baking them into the image.
+
+1.  Modify the `Containerfile` to use a build argument.
+    ```bash
+    cat <<EOF > Containerfile
+    FROM registry.access.redhat.com/ubi8/ubi-minimal
+
+    # Declare a build-time argument with a default value of "N/A"
+    ARG APP_BUILD_NUMBER=N/A
+
+    # Persist the build argument's value into a permanent environment variable
+    ENV APP_BUILD=\$APP_BUILD_NUMBER
+
+    # The command will now print the build number
+    CMD echo "Build number: \$APP_BUILD"
+    EOF
+    ```
+
+2.  Build the new image, passing a value for `APP_BUILD_NUMBER` with the `--build-arg` flag. Let's tag this image as `arg-demo`.
+    ```bash
+    podman build --build-arg APP_BUILD_NUMBER=42 -t arg-demo .
+    ```
+
+3.  Run a container from the `arg-demo` image.
+    ```bash
+    podman run --rm arg-demo
+    ```
+
+**Expected Output:**
+```
+Build number: 42
+```
+*If you build without the `--build-arg`, the output will show the default value: `Build number: N/A`.*
+
+---
+
+### **Troubleshooting Tips**
+
+*   **Variables Not Appearing:** Double-check your `Containerfile` syntax. Ensure there are no spaces around the `=` in `ENV` instructions (e.g., `ENV KEY="value"` not `ENV KEY = "value"`).
+*   **ARG Issues:** Confirm that you are using the `--build-arg` flag during the `podman build` command. `ARG` values are not available at runtime.
+*   **Permission Errors:** If you encounter permission-denied errors, you might be running in a restricted environment. Running Podman with `sudo` can resolve this, but it is not a recommended practice for security reasons.
+
+### **Conclusion**
+
+In this lab, you have gained practical experience with two fundamental `Containerfile` instructions, `ENV` and `ARG`. You have learned to:
+
+*   Define persistent environment variables using `ENV`.
+*   Override these variables at runtime with the `-e` flag and `--env-file` option.
+*   Inspect the environment of a running container using `podman exec`.
+*   Utilize `ARG` to pass temporary, build-time information to your image builds.
+
+Mastering these skills is crucial for building flexible and configurable containerized applications for platforms like OpenShift and Kubernetes.
+
+### **Next Steps**
+
+*   Experiment with multi-stage builds where you can pass `ARG` values between stages.
+*   Investigate how Kubernetes and OpenShift manage environment variables in `Deployment` configurations.
+*   Explore the use of `ConfigMaps` and `Secrets` to inject configuration and credentials into pods as environment variables.
+
+### **Cleanup**
+
+To keep your system tidy, remove the containers and images created during this lab.
+
+1.  **Remove all containers (forcefully):**
+    ```bash
+    podman rm -f $(podman ps -aq)
+    ```
+
+2.  **Remove the lab images:**
+    ```bash
+    podman rmi env-demo arg-demo
+    ```
