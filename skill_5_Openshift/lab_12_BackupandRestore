@@ -1,0 +1,553 @@
+# Lab 12: Backup and Restore Data
+
+## **Objectives**
+* Master data backup strategies for stateful containers in production environments
+* Learn to perform secure database dumps inside running containers
+* Understand how to store backup dumps on persistent volumes for durability
+* Practice complete data restoration workflows from backup dumps
+* Develop skills essential for database disaster recovery in containerized environments
+
+## **Prerequisites**
+* Podman installed (version 3.0+) - Container runtime for managing containers and volumes
+* Basic understanding of container concepts including volumes and networking
+* Access to a Linux system or virtual machine with sufficient resources
+* Internet access to pull container images from public registries
+* Basic familiarity with SQL database operations
+
+---
+
+## **Lab Setup**
+
+### **Step 1: Verify Podman Installation**
+```bash
+sudo podman --version
+```
+
+**Command Purpose**: This verifies that Podman is properly installed and shows the version number. Podman version 3.0+ includes enhanced volume management features we'll use in this lab.
+
+**Expected Output**: Should display something like `podman version 3.4.4` or higher.
+
+**Ubuntu Note**: On Ubuntu, Podman requires `sudo` by default unless you've configured rootless mode. We'll use `sudo` throughout this lab for simplicity and compatibility.
+
+**Learning Note**: Podman is Red Hat's daemon-less container engine that's compatible with Docker commands but runs without a central daemon, making it more secure for rootless operations.
+
+### **Step 2: Create Working Directory Structure**
+```bash
+mkdir -p ~/backup-lab && cd ~/backup-lab
+```
+
+**Command Breakdown**:
+- `mkdir -p`: Creates directory and any necessary parent directories
+- `~/backup-lab`: Creates the directory in your home folder
+- `&& cd ~/backup-lab`: Changes to the new directory only if mkdir succeeds
+
+**Why This Matters**: Organizing your lab work in a dedicated directory keeps backup files organized and makes cleanup easier.
+
+---
+
+## **Task 1: Perform Database Dumps Inside Container**
+
+### **Subtask 1.1: Create a MySQL Container**
+```bash
+sudo podman run -d --name mysql-db \
+  -e MYSQL_ROOT_PASSWORD=redhat \
+  -e MYSQL_DATABASE=testdb \
+  -e MYSQL_USER=testuser \
+  -e MYSQL_PASSWORD=testpass \
+  docker.io/library/mysql:8.0
+```
+
+**Command Deep Dive**:
+- `sudo podman run -d`: Runs container in detached mode (background) with elevated privileges
+- `--name mysql-db`: Assigns a memorable name for easier container management
+- `-e MYSQL_ROOT_PASSWORD=redhat`: Sets the MySQL root user password
+- `-e MYSQL_DATABASE=testdb`: Creates an initial database named 'testdb'
+- `-e MYSQL_USER=testuser`: Creates a non-root user for better security practices
+- `-e MYSQL_PASSWORD=testpass`: Sets password for the created user
+- `docker.io/library/mysql:8.0`: Pulls official MySQL 8.0 image from Docker Hub
+
+**Ubuntu Note**: The `sudo` is required because Podman needs elevated privileges to manage containers and networking on Ubuntu by default.
+
+**Security Note**: In production environments, never use simple passwords like these. Always use complex passwords or better yet, use secrets management.
+
+### **Verification of Container Status**
+```bash
+sudo podman ps -f name=mysql-db
+```
+
+**Command Explanation**:
+- `sudo podman ps`: Lists running containers with elevated privileges
+- `-f name=mysql-db`: Filters output to show only containers with name matching 'mysql-db'
+
+**What to Look For**: Container should show status as "Up" and be running on port 3306/tcp.
+
+### **Subtask 1.2: Create Sample Data for Backup Testing**
+
+#### **Step 1: Access the MySQL Container**
+```bash
+sudo podman exec -it mysql-db mysql -u root -predhat
+```
+
+**Command Breakdown**:
+- `sudo podman exec -it`: Executes a command inside a running container with interactive terminal (requires sudo)
+- `mysql-db`: Name of the target container
+- `mysql -u root -predhat`: Connects to MySQL as root user with password 'redhat'
+
+**Learning Point**: This demonstrates how to access database services running inside containers without exposing them to external networks.
+
+#### **Step 2: Create Sample Database Schema and Data**
+```sql
+USE testdb;
+CREATE TABLE employees (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(50));
+INSERT INTO employees (name) VALUES ('John Doe'), ('Jane Smith');
+SELECT * FROM employees;
+```
+
+**SQL Operations Explained**:
+- `USE testdb;`: Switches to the testdb database context
+- `CREATE TABLE employees`: Creates a table with auto-incrementing ID and name field
+- `INSERT INTO employees`: Adds two sample employee records
+- `SELECT * FROM employees;`: Verifies data was inserted correctly
+
+**Expected Output**: You should see a table with two rows containing the employee data.
+
+#### **Step 3: Exit MySQL Shell**
+```sql
+exit
+```
+
+**Purpose**: Cleanly exits the MySQL command-line interface and returns to the host shell.
+
+### **Subtask 1.3: Create Database Dump for Backup**
+```bash
+sudo podman exec mysql-db /usr/bin/mysqldump -u root -predhat testdb > testdb_dump.sql
+```
+
+**Command Analysis**:
+- `sudo podman exec mysql-db`: Executes command inside the mysql-db container with elevated privileges
+- `/usr/bin/mysqldump`: Full path to mysqldump utility inside container
+- `-u root -predhat`: Connects as root user with password
+- `testdb`: Specifies which database to dump
+- `> testdb_dump.sql`: Redirects output to a file on the host system
+
+**Key Learning**: The mysqldump command runs inside the container but the output file is created on the host system. This is a critical concept for backup strategies.
+
+### **Verification of Backup Creation**
+```bash
+ls -l testdb_dump.sql
+head -n 5 testdb_dump.sql
+```
+
+**Command Purpose**:
+- `ls -l`: Shows detailed file information including size and permissions
+- `head -n 5`: Displays first 5 lines of the dump file to verify content
+
+**What You'll See**: The dump file should contain SQL commands starting with comments about MySQL version and dump creation time.
+
+---
+
+## **Task 2: Store Dumps on Volumes**
+
+### **Subtask 2.1: Create Persistent Volume for Long-term Storage**
+```bash
+sudo podman volume create backup-vol
+```
+
+**Volume Concepts**:
+- **Persistent Volume**: Storage that survives container deletion
+- **Managed by Podman**: Located in `/var/lib/containers/storage/volumes/`
+- **Portable**: Can be attached to different containers
+
+**Why Use Volumes**: Volumes provide data persistence, better performance, and can be shared between containers.
+
+### **Subtask 2.2: Copy Dump to Volume**
+
+#### **Step 1: Create Directory Structure in Volume**
+```bash
+sudo podman run -it --rm -v backup-vol:/backup alpine sh
+```
+
+**Command Breakdown**:
+- `sudo podman run -it`: Interactive terminal session with elevated privileges
+- `--rm`: Automatically removes container when it exits (cleanup)
+- `-v backup-vol:/backup`: Mounts our volume to /backup inside container
+- `alpine sh`: Uses lightweight Alpine Linux with shell access
+
+**Alpine Linux**: Minimal Linux distribution perfect for utility containers due to its small size (~5MB).
+
+#### **Step 2: Create Directory Inside Container**
+```bash
+mkdir -p /backup/mysql
+exit
+```
+
+**Operations**:
+- `mkdir -p /backup/mysql`: Creates directory structure for organizing backups
+- `exit`: Exits the Alpine container (which gets automatically removed due to --rm)
+
+**Result**: The directory structure now exists permanently in the volume.
+
+#### **Step 3: Copy Dump File to Volume**
+```bash
+sudo podman cp testdb_dump.sql $(sudo podman create --name temp -v backup-vol:/backup alpine):/backup/mysql/
+sudo podman rm temp
+```
+
+**Complex Command Explained**:
+- `$(sudo podman create --name temp -v backup-vol:/backup alpine)`: Creates temporary container with volume mounted
+- `sudo podman cp`: Copies file from host to container with elevated privileges
+- `testdb_dump.sql`: Source file on host
+- `:/backup/mysql/`: Destination path in container (and volume)
+- `sudo podman rm temp`: Removes temporary container after copy
+
+**Alternative Method**: You could also use a running container, but this method is cleaner for one-time operations.
+
+### **Verification of Volume Storage**
+```bash
+sudo podman run --rm -v backup-vol:/backup alpine ls -l /backup/mysql
+```
+
+**Verification Purpose**: Confirms the dump file is properly stored in the persistent volume with correct permissions and file size.
+
+---
+
+## **Task 3: Restore Data from Dumps**
+
+### **Subtask 3.1: Create New MySQL Container for Restoration**
+```bash
+sudo podman run -d --name mysql-restore \
+  -e MYSQL_ROOT_PASSWORD=redhat \
+  -e MYSQL_DATABASE=testdb \
+  -e MYSQL_USER=testuser \
+  -e MYSQL_PASSWORD=testpass \
+  docker.io/library/mysql:8.0
+```
+
+**Restoration Scenario**: This simulates disaster recovery where you need to restore data to a new database instance. The container name `mysql-restore` differentiates it from the original.
+
+**Environment Setup**: Same configuration as original ensures compatibility for restoration process.
+
+### **Subtask 3.2: Restore Data from Volume Backup**
+
+#### **Step 1: Copy Dump File from Volume to Host**
+```bash
+sudo podman run --rm -v backup-vol:/backup alpine cp /backup/mysql/testdb_dump.sql /tmp/
+sudo podman cp $(sudo podman create --name temp -v backup-vol:/backup alpine):/tmp/testdb_dump.sql .
+sudo podman rm temp
+```
+
+**Two-Step Process Explained**:
+1. **First command**: Copies file within the volume-mounted container from /backup/mysql/ to /tmp/
+2. **Second command**: Copies file from container's /tmp/ to current host directory
+3. **Third command**: Cleans up temporary container
+
+**Alternative Approach**: You could pipe directly from volume to MySQL, but this method provides more control and error handling.
+
+#### **Step 2: Restore the Database Dump**
+```bash
+sudo podman exec -i mysql-restore mysql -u root -predhat testdb < testdb_dump.sql
+```
+
+**Restoration Command Breakdown**:
+- `sudo podman exec -i`: Executes command with input stream (stdin) enabled and elevated privileges
+- `mysql-restore`: Target container for restoration
+- `mysql -u root -predhat testdb`: MySQL client connecting to testdb database
+- `< testdb_dump.sql`: Pipes dump file content as input to MySQL
+
+**Critical Detail**: The `-i` flag is essential for feeding the dump file content to MySQL.
+
+### **Subtask 3.3: Verify Successful Restoration**
+```bash
+sudo podman exec -it mysql-restore mysql -u root -predhat -e "SELECT * FROM testdb.employees;"
+```
+
+**Verification Command**:
+- `-e "SELECT * FROM testdb.employees;"`: Executes SQL query directly without entering MySQL shell
+- **Expected Result**: Should display the same employee data from the original database
+
+### **Expected Output Confirmation**
+```
++----+------------+
+| id | name       |
++----+------------+
+|  1 | John Doe   |
++----+------------+
+|  2 | Jane Smith |
++----+------------+
+```
+
+**Success Criteria**: If you see this exact output, your backup and restore process worked perfectly!
+
+---
+
+## **Troubleshooting Common Issues**
+
+### **Issue 1: MySQL Container Startup Failures**
+```bash
+sudo podman logs mysql-db
+```
+
+**Diagnostic Purpose**: Container logs reveal startup errors, configuration issues, or resource problems.
+
+**Common Problems**:
+- Insufficient memory allocation
+- Port conflicts with existing services
+- Invalid environment variable values
+
+### **Issue 2: Volume Permission Problems**
+```bash
+-v backup-vol:/backup:Z
+```
+
+**SELinux Context Fix**: The `:Z` flag relabels volume content for SELinux compatibility, resolving permission denied errors on RHEL/CentOS systems.
+
+**When to Use**: If you encounter permission errors when accessing volumes, especially on systems with SELinux enabled.
+
+### **Issue 3: Database Dump or Restore Failures**
+**Verification Steps**:
+1. Confirm MySQL credentials are correct
+2. Verify database name exists
+3. Check if container is fully started (may take 30-60 seconds)
+4. Ensure sufficient disk space for dump files
+
+---
+
+## **Key Learning Outcomes**
+
+### **What You've Accomplished**:
+1. **Container Database Management**: Created and managed MySQL containers with proper configuration
+2. **Backup Strategy Implementation**: Generated database dumps using mysqldump utility
+3. **Volume-Based Storage**: Used persistent volumes for reliable backup storage
+4. **Disaster Recovery**: Successfully restored data from backups to new container instances
+
+### **Production Applications**:
+- **Automated Backup Scripts**: These commands can be scheduled with cron for regular backups
+- **Disaster Recovery**: Process tested here scales to production database recovery
+- **DevOps Integration**: Backup and restore can be integrated into CI/CD pipelines
+- **Multi-Environment Promotion**: Copy data between development, staging, and production
+
+### **Red Hat OpenShift Relevance**:
+These skills directly apply to:
+- **Persistent Volume Claims (PVCs)** in OpenShift
+- **Database operators** for automated backup/restore
+- **StatefulSets** for database workloads
+- **Container security** and volume management
+
+---
+
+## **Cleanup and Resource Management**
+```bash
+sudo podman stop mysql-db mysql-restore
+sudo podman rm mysql-db mysql-restore
+sudo podman volume rm backup-vol
+rm -f testdb_dump.sql
+```
+
+**Cleanup Explanation**:
+- `sudo podman stop`: Gracefully stops running containers with elevated privileges
+- `sudo podman rm`: Removes stopped containers
+- `sudo podman volume rm`: Deletes the persistent volume and all its data
+- `rm -f testdb_dump.sql`: Removes backup file from host filesystem
+
+**Resource Management**: Always clean up lab resources to free system resources and storage space.
+
+---
+
+## **Advanced Considerations for Production**
+
+### **Security Enhancements**:
+1. **Encrypted Backups**: Use GPG encryption for sensitive backup data
+2. **Secrets Management**: Store database passwords in container secrets
+3. **Network Isolation**: Use custom networks to isolate database containers
+4. **User Permissions**: Run containers with non-root users when possible
+
+### **Scalability Improvements**:
+1. **Automated Scheduling**: Implement cron jobs for regular backups
+2. **Retention Policies**: Automatically remove old backups to manage storage
+3. **Compression**: Use gzip compression for large database dumps
+4. **Remote Storage**: Store backups in object storage (S3, etc.) for durability
+
+This comprehensive lab provides you with practical, production-ready skills for managing database backups and recovery in containerized environments!
+
+---
+
+## **🎯 BONUS SECTION: Memory Palace & Real-World Mastery**
+
+### **🧠 The "3-2-1 Backup Story" Memory Technique**
+
+Remember this lab forever with the **"Captain MySQL's Disaster Recovery Adventure"** story:
+
+**🚢 Chapter 1: The Ship (Container Creation)**
+> *Captain MySQL sets sail on the ship "mysql-db" with his precious cargo (data). He needs a strong password ("redhat") to protect his treasure chest.*
+> 
+> **Memory Hook**: `sudo podman run -d --name mysql-db` = "**S**etting **U**p **D**atabase **O**n **Ship**"
+
+**📦 Chapter 2: The Treasure Map (Database Dump)**
+> *The Captain creates a detailed treasure map (mysqldump) showing exactly where every piece of gold (data) is buried.*
+> 
+> **Memory Hook**: `mysqldump > testdb_dump.sql` = "**M**ap **U**nder **S**eal for **Q**uick **L**ocation"
+
+**🏰 Chapter 3: The Fortress (Volume Storage)**
+> *He stores the map in an impenetrable fortress (volume) that survives even if pirates sink his ship.*
+> 
+> **Memory Hook**: `podman volume create backup-vol` = "**V**ault **O**f **L**asting **U**nity **M**aintains **E**ternal **S**ecurity"
+
+**⚡ Chapter 4: The Phoenix (Restoration)**
+> *When disaster strikes, Captain MySQL uses his map to rebuild his empire on a new ship "mysql-restore".*
+> 
+> **Memory Hook**: `mysql < testdb_dump.sql` = "**M**agically **Y**earning **S**alve **Q**uickly **L**aunches **R**ebirth"
+
+### **🎮 The Container Commands Game**
+
+**Level 1: Basic Warrior** 🗡️
+```bash
+sudo podman --version          # "Show me your weapon!"
+sudo podman ps                 # "Who's still fighting?"
+sudo podman logs mysql-db      # "Tell me their battle story!"
+```
+
+**Level 2: Storage Mage** 🧙‍♂️
+```bash
+sudo podman volume create backup-vol    # "Conjure eternal storage!"
+sudo podman cp file container:/path     # "Teleport treasures instantly!"
+sudo podman exec -it container bash     # "Enter the mystical realm!"
+```
+
+**Level 3: Backup Master** 👑
+```bash
+sudo podman exec mysql-db mysqldump ... > backup.sql    # "Create the master scroll!"
+sudo podman exec -i mysql-restore mysql ... < backup.sql # "Resurrect from the scroll!"
+```
+
+### **🎵 The "Podman Backup Blues" Song**
+
+*Sing this to remember the workflow:*
+
+> 🎵 *"Sudo podman run, my database spun*  
+> *Creating data till the job was done*  
+> *Mysqldump made my backup file*  
+> *Stored in volumes, safe in style*  
+> *When disaster came and containers fell*  
+> *My backups brought me back from hell!"* 🎵
+
+### **🔥 Real-World Challenge Scenarios**
+
+#### **Scenario 1: "The 3 AM Emergency"**
+It's 3 AM. Your production database crashed. You have 15 minutes before angry customers wake up. What do you do?
+
+**Your Arsenal**:
+```bash
+# Step 1: Assess the damage
+sudo podman ps -a | grep mysql
+
+# Step 2: Check if data survived
+sudo podman volume ls
+
+# Step 3: Emergency restore
+sudo podman run -d --name mysql-emergency -v backup-vol:/backup mysql:8.0
+sudo podman exec -i mysql-emergency mysql < /backup/latest.sql
+```
+
+#### **Scenario 2: "The Migration Mission"**
+You need to move your database from Server A to Server B without downtime.
+
+**Mission Plan**:
+1. Create backup on Server A
+2. Transfer to Server B via volume or network
+3. Restore on Server B
+4. Switch traffic (Blue-Green deployment)
+
+#### **Scenario 3: "The Compliance Audit"**
+Auditors ask: "Prove you can recover data from 6 months ago."
+
+**Your Evidence**:
+- Automated backup scripts with date stamps
+- Volume snapshots with retention policies
+- Documented restore procedures (this lab!)
+
+### **🏆 Mastery Milestones Checklist**
+
+Mark your progression:
+
+- [ ] **Novice**: Can create containers with basic settings
+- [ ] **Apprentice**: Can backup data using mysqldump
+- [ ] **Journeyman**: Can store backups in persistent volumes
+- [ ] **Expert**: Can restore data to new containers
+- [ ] **Master**: Can troubleshoot common issues
+- [ ] **Grandmaster**: Can design automated backup systems
+
+### **🚀 Your Next Adventures**
+
+**Week 1 Challenge**: Set up automated daily backups using cron
+```bash
+# Add to crontab: 0 2 * * * /home/user/backup-script.sh
+```
+
+**Week 2 Challenge**: Create a backup monitoring system
+```bash
+# Check backup file sizes and alert if too small
+```
+
+**Month 1 Challenge**: Build a complete disaster recovery plan
+- Document RTO (Recovery Time Objective)
+- Document RPO (Recovery Point Objective)  
+- Test quarterly with your team
+
+### **🎭 The "Container Wisdom" Mantras**
+
+Repeat these daily for mastery:
+
+1. **"Containers are cattle, data is precious"** - Always protect your data
+2. **"Test your backups or they don't exist"** - Regular restore tests save careers
+3. **"Automate today what will save you tomorrow"** - Scripts prevent 3 AM panics
+4. **"Document like your job depends on it"** - Because it does!
+
+### **🌟 Hall of Fame: What Makes You a Container Backup Legend**
+
+You'll know you've mastered this when:
+
+- ✨ You can restore a database faster than ordering pizza
+- ✨ Your backup scripts run smoother than your morning coffee routine  
+- ✨ You sleep soundly knowing your data is safer than Fort Knox
+- ✨ Junior developers come to YOU with container questions
+- ✨ You can explain volume mounts to your grandmother
+- ✨ Your disaster recovery plan is so good, disasters are afraid of you
+
+### **🎯 Final Boss Battle: The Ultimate Test**
+
+Ready for the final challenge? Try this without looking at the lab:
+
+1. Create a PostgreSQL container with persistent data
+2. Add 1000 records using a script
+3. Create automated backup solution
+4. Simulate server crash (stop all containers)
+5. Restore everything on a "new server" (different container names)
+6. Verify all 1000 records survived
+7. Document the entire process
+
+**Time limit**: 30 minutes  
+**Success criteria**: Zero data loss, complete documentation
+
+### **🏅 Your Container Backup Certification**
+
+```
+🎖️ CERTIFICATE OF MASTERY 🎖️
+
+This certifies that [YOUR NAME] has successfully mastered:
+✓ Container lifecycle management
+✓ Database backup strategies  
+✓ Volume-based persistence
+✓ Disaster recovery procedures
+✓ Production troubleshooting
+
+"I solemnly swear to backup responsibly and restore heroically"
+
+Signed: Captain MySQL & The Container Crew
+Date: [TODAY'S DATE]
+```
+
+**Congratulations!** You're now equipped with container backup superpowers! 🦸‍♂️🦸‍♀️
+
+---
+
+*Remember: Great container administrators aren't born, they're forged through countless backup-and-restore cycles. You've just completed your first epic quest. The container kingdom awaits your leadership!* ⚔️🏰
