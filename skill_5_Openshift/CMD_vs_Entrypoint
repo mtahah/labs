@@ -1,0 +1,454 @@
+# Lab 6: CMD vs ENTRYPOINT Instructions - Enhanced Edition
+
+## **Objectives**
+- Understand the difference between CMD and ENTRYPOINT instructions in container images
+- Implement both instructions in Containerfiles
+- Combine ENTRYPOINT with CMD for default arguments
+- Test command overriding at runtime
+
+## **Prerequisites**
+- Podman installed on XFCE desktop environment
+- Basic familiarity with Linux command line
+- Text editor (nano recommended for beginners)
+- Internet access to pull base images
+
+## **Lab Setup**
+
+### Step 1: Open Terminal and Verify Environment
+```bash
+# Open XFCE terminal (Applications → Terminal Emulator)
+# Verify Podman installation
+podman --version
+```
+
+```bash
+# Check if we have internet connectivity
+ping -c 3 google.com
+```
+
+```bash
+# Create our lab workspace
+mkdir -p ~/cmd-entrypoint-lab && cd ~/cmd-entrypoint-lab
+```
+
+```bash
+# Verify we're in the right directory
+pwd
+echo "Working directory created successfully!"
+```
+
+---
+
+## **Task 1: Understanding CMD Instruction**
+
+### Subtask 1.1: Basic CMD Implementation
+
+```bash
+# Create our first Containerfile using nano
+nano Containerfile.cmd
+```
+
+**Content for Containerfile.cmd:**
+```dockerfile
+FROM alpine:latest
+CMD ["echo", "Hello from CMD"]
+```
+
+**Save and exit nano:** `Ctrl+X`, then `Y`, then `Enter`
+
+```bash
+# Build the image
+podman build -t cmd-demo -f Containerfile.cmd .
+```
+
+```bash
+# Let's see what images we have now
+podman images | grep cmd-demo
+echo "✓ Image built successfully!"
+```
+
+```bash
+# Run the container and see the default CMD behavior
+podman run cmd-demo
+```
+
+```bash
+# Add a comment about what we just saw
+echo "💡 Notice: The container executed the CMD instruction and displayed 'Hello from CMD'"
+```
+
+### Subtask 1.2: Overriding CMD
+
+```bash
+# Now let's override the CMD at runtime
+podman run cmd-demo echo "Overridden command"
+```
+
+```bash
+# Let's see the difference more clearly
+echo "=== Comparison ==="
+echo "Default CMD behavior:"
+podman run cmd-demo
+echo ""
+echo "Overridden CMD behavior:"
+podman run cmd-demo echo "This replaces the entire CMD"
+echo ""
+echo "💡 Key Learning: CMD can be completely replaced at runtime"
+```
+
+---
+
+## **Task 2: Understanding ENTRYPOINT Instruction**
+
+### Subtask 2.1: Basic ENTRYPOINT Implementation
+
+```bash
+# Create Containerfile for ENTRYPOINT demo
+nano Containerfile.entrypoint
+```
+
+**Content for Containerfile.entrypoint:**
+```dockerfile
+FROM alpine:latest
+ENTRYPOINT ["echo", "Hello from ENTRYPOINT"]
+```
+
+```bash
+# Build the ENTRYPOINT demo
+podman build -t entrypoint-demo -f Containerfile.entrypoint .
+```
+
+```bash
+# Verify the build
+podman images | grep entrypoint-demo
+echo "✓ ENTRYPOINT demo image ready!"
+```
+
+```bash
+# Run with default ENTRYPOINT
+podman run entrypoint-demo
+```
+
+### Subtask 2.2: Appending to ENTRYPOINT
+
+```bash
+# Try to "override" ENTRYPOINT (spoiler: it won't replace it)
+podman run entrypoint-demo "with appended text"
+```
+
+```bash
+# Let's demonstrate the key difference
+echo "=== ENTRYPOINT vs CMD Comparison ==="
+echo "ENTRYPOINT behavior (arguments get appended):"
+podman run entrypoint-demo "- this text gets appended!"
+echo ""
+echo "CMD behavior (gets completely replaced):"
+podman run cmd-demo echo "- this completely replaces CMD"
+echo ""
+echo "💡 Key Learning: ENTRYPOINT arguments are appended, not replaced"
+```
+
+---
+
+## **Task 3: Combining ENTRYPOINT and CMD**
+
+### Subtask 3.1: ENTRYPOINT with CMD Defaults
+
+```bash
+# Create the combined approach
+nano Containerfile.combined
+```
+
+**Content for Containerfile.combined:**
+```dockerfile
+FROM alpine:latest
+ENTRYPOINT ["echo"]
+CMD ["Default message"]
+```
+
+```bash
+# Build the combined demo
+podman build -t combined-demo -f Containerfile.combined .
+```
+
+```bash
+# Test default behavior (ENTRYPOINT + CMD)
+podman run combined-demo
+```
+
+```bash
+# Show what's happening behind the scenes
+echo "💡 What just happened: podman executed 'echo Default message'"
+echo "   - ENTRYPOINT provided: 'echo'"
+echo "   - CMD provided the default argument: 'Default message'"
+```
+
+### Subtask 3.2: Overriding CMD in Combined Setup
+
+```bash
+# Override the CMD part while keeping ENTRYPOINT
+podman run combined-demo "Custom message"
+```
+
+```bash
+# Demonstrate the flexibility
+echo "=== Combined ENTRYPOINT + CMD Demo ==="
+echo "Default (ENTRYPOINT + CMD):"
+podman run combined-demo
+echo ""
+echo "Custom argument (ENTRYPOINT + custom):"
+podman run combined-demo "My custom message!"
+echo ""
+echo "Multiple arguments (ENTRYPOINT + multiple args):"
+podman run combined-demo "Hello" "from" "combined" "setup!"
+echo ""
+echo "💡 Best of both worlds: Fixed command with flexible arguments!"
+```
+
+---
+
+## **Task 4: Advanced Usage Patterns**
+
+### Subtask 4.1: Shell Script as ENTRYPOINT
+
+```bash
+# Create an entrypoint script
+nano entrypoint.sh
+```
+
+**Content for entrypoint.sh:**
+```bash
+#!/bin/sh
+echo "🚀 Starting container with arguments: $@"
+echo "📋 Number of arguments received: $#"
+echo "⚡ Executing command..."
+exec "$@"
+```
+
+```bash
+# Make the script executable
+chmod +x entrypoint.sh
+```
+
+```bash
+# Verify the script permissions
+ls -la entrypoint.sh
+echo "✓ Script is now executable!"
+```
+
+```bash
+# Create Containerfile for script demo
+nano Containerfile.script
+```
+
+**Content for Containerfile.script:**
+```dockerfile
+FROM alpine:latest
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["echo", "Default execution from script"]
+```
+
+```bash
+# Build the script demo
+podman build -t script-demo -f Containerfile.script .
+```
+
+```bash
+# Test the script with default CMD
+podman run script-demo
+```
+
+```bash
+# Test with custom commands
+echo "=== Script ENTRYPOINT Demonstrations ==="
+echo "1. Default behavior:"
+podman run script-demo
+echo ""
+echo "2. Custom echo command:"
+podman run script-demo echo "Custom echo via script!"
+echo ""
+echo "3. Running ls command:"
+podman run script-demo ls -la /
+echo ""
+echo "4. Multiple commands with sh -c:"
+podman run script-demo sh -c "echo 'First command' && echo 'Second command'"
+```
+
+### Subtask 4.2: Complete Override with --entrypoint
+
+```bash
+# Show how to completely override ENTRYPOINT
+echo "=== Complete ENTRYPOINT Override ==="
+echo "Normal behavior:"
+podman run script-demo echo "Normal execution"
+echo ""
+echo "Completely bypassing ENTRYPOINT:"
+podman run --entrypoint /bin/sh script-demo -c "echo 'Bypassed the script entirely!'"
+```
+
+```bash
+# More override examples
+echo ""
+echo "Using --entrypoint to run different commands:"
+podman run --entrypoint /bin/ls script-demo -l /
+echo ""
+podman run --entrypoint /usr/bin/whoami script-demo
+```
+
+---
+
+## **Hands-on Learning & Verification**
+
+```bash
+# Let's create a summary of what we've built
+echo "=== Lab Summary ==="
+echo "Images created in this lab:"
+podman images --format "table {{.Repository}} {{.Tag}} {{.Created}} {{.Size}}" | grep -E "(cmd-demo|entrypoint-demo|combined-demo|script-demo)"
+```
+
+```bash
+# Interactive comparison - run all demos
+echo ""
+echo "=== Live Comparison Demo ==="
+echo "1. CMD Demo (easily overridden):"
+podman run cmd-demo
+podman run cmd-demo echo "CMD was replaced!"
+echo ""
+echo "2. ENTRYPOINT Demo (arguments appended):"
+podman run entrypoint-demo
+podman run entrypoint-demo "with extra text"
+echo ""
+echo "3. Combined Demo (flexible default arguments):"
+podman run combined-demo
+podman run combined-demo "with custom argument"
+echo ""
+echo "4. Script Demo (advanced processing):"
+podman run script-demo
+podman run script-demo echo "Script processed this command"
+```
+
+---
+
+## **Understanding Check**
+
+```bash
+# Let's verify our understanding with some tests
+echo "=== Understanding Check ==="
+echo ""
+echo "Test 1: What happens when we try to 'override' ENTRYPOINT?"
+podman run entrypoint-demo "trying to override"
+echo "Result: Arguments were appended, not replaced ✓"
+echo ""
+
+echo "Test 2: Can we still override CMD in combined setup?"
+podman run combined-demo "yes we can!"
+echo "Result: CMD was replaced with our argument ✓"
+echo ""
+
+echo "Test 3: Does our script entrypoint work with complex commands?"
+podman run script-demo sh -c "echo 'Complex command works!'"
+echo "Result: Script successfully executed the complex command ✓"
+```
+
+---
+
+## **Troubleshooting Section**
+
+```bash
+# Common troubleshooting commands
+echo "=== Troubleshooting Toolkit ==="
+echo "If something goes wrong, try these commands:"
+echo ""
+echo "1. Check container logs:"
+echo "   podman logs [container-name]"
+echo ""
+echo "2. Inspect image details:"
+echo "   podman inspect script-demo | grep -A 10 -B 5 -i entrypoint"
+echo ""
+echo "3. Run container interactively for debugging:"
+echo "   podman run -it --entrypoint /bin/sh script-demo"
+echo ""
+echo "4. Check if files were copied correctly:"
+echo "   podman run --entrypoint /bin/ls script-demo -la /"
+```
+
+```bash
+# Let's actually run one of these diagnostic commands
+echo "Running diagnostic: Checking if entrypoint.sh was copied correctly..."
+podman run --entrypoint /bin/ls script-demo -la /entrypoint.sh
+echo "✓ Diagnostic complete!"
+```
+
+---
+
+## **Cleanup and Final Verification**
+
+```bash
+# Final demonstration before cleanup
+echo "=== Final Demo Before Cleanup ==="
+echo "🎉 Congratulations! Let's run one final test:"
+podman run combined-demo "Lab 6 completed successfully! 🎉"
+```
+
+```bash
+# Clean up all images
+echo ""
+echo "Cleaning up lab images..."
+podman rmi cmd-demo entrypoint-demo combined-demo script-demo
+```
+
+```bash
+# Verify cleanup
+echo "Cleanup verification:"
+podman images | grep -E "(cmd-demo|entrypoint-demo|combined-demo|script-demo)" || echo "✓ All lab images cleaned up successfully!"
+```
+
+```bash
+# Final workspace cleanup
+cd ..
+rm -rf cmd-entrypoint-lab
+echo "✓ Lab directory cleaned up!"
+echo ""
+echo "🎓 Lab 6 Complete! You now understand:"
+echo "   • CMD provides default commands (easily overridden)"
+echo "   • ENTRYPOINT makes containers behave like executables"
+echo "   • Combined approach offers flexibility with defaults"
+echo "   • Advanced patterns using shell scripts"
+```
+
+---
+
+## **Quick Reference Card**
+
+```bash
+# Create a quick reference for future use
+echo "=== Quick Reference ==="
+echo "CMD Instruction:"
+echo "  • Purpose: Default command/arguments"
+echo "  • Override: Completely replaced by runtime arguments"
+echo "  • Use case: Simple default behavior"
+echo ""
+echo "ENTRYPOINT Instruction:"
+echo "  • Purpose: Fixed executable behavior"
+echo "  • Override: Runtime arguments are appended"
+echo "  • Use case: Container as a command-line tool"
+echo ""
+echo "Combined (ENTRYPOINT + CMD):"
+echo "  • ENTRYPOINT: Fixed executable"
+echo "  • CMD: Default arguments (can be overridden)"
+echo "  • Use case: Flexible containers with sensible defaults"
+echo ""
+echo "💡 Pro tip: Save this reference for future container building!"
+```
+
+---
+
+## **Next Steps**
+- Experiment with multi-stage builds using these patterns
+- Apply these concepts in Kubernetes/OpenShift pod specifications  
+- Try building your own application containers using these patterns
+- Explore how these instructions work with different base images
+
+**🎉 Congratulations on completing the enhanced CMD vs ENTRYPOINT lab!**
