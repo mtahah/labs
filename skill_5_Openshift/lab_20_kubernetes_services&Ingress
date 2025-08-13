@@ -1,0 +1,2476 @@
+# Kubernetes Services & Ingress: Complete Technical Deep Dive
+
+## 0. ENVIRONMENT SETUP AND PREREQUISITES
+
+### Pre-Lab Environment Check and Setup
+
+Before starting the lab, let's verify and set up your XFCE terminal environment:
+
+#### Step 1: Check if you have a Kubernetes cluster
+```bash
+# Check if kubectl is installed
+kubectl version --client
+# This shows the kubectl client version. If not installed, you'll get "command not found"
+
+# Check if you have access to a cluster
+kubectl cluster-info
+# This should show cluster information. If it fails, you need to set up cluster access
+
+# Check cluster nodes (should show at least one node)
+kubectl get nodes
+# Shows all nodes in your cluster with their status
+```
+
+#### Step 2: Install kubectl if not available (Ubuntu/Debian)
+```bash
+# Update package index
+sudo apt-get update
+
+# Install curl if not available
+sudo apt-get install -y curl
+
+# Download kubectl binary
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+
+# Make kubectl executable
+chmod +x kubectl
+
+# Move to PATH
+sudo mv kubectl /usr/local/bin/
+
+# Verify installation
+kubectl version --client
+```
+
+#### Step 3: Set up a local cluster (if you don't have one)
+
+**Option A: Using minikube (Recommended for learning)**
+```bash
+# Install minikube
+curl -Lo minikube https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+chmod +x minikube
+sudo mv minikube /usr/local/bin/
+
+# Start minikube cluster
+minikube start
+# This creates a single-node Kubernetes cluster in a VM
+
+# Verify cluster is running
+kubectl get nodes
+# Should show one node named "minikube" with Ready status
+
+# Enable ingress addon (needed for ingress testing later)
+minikube addons enable ingress
+# This installs nginx-ingress-controller in your cluster
+```
+
+**Option B: Using kind (Kubernetes in Docker)**
+```bash
+# Install Docker first (if not installed)
+sudo apt-get install -y docker.io
+sudo systemctl start docker
+sudo systemctl enable docker
+sudo usermod -aG docker $USER
+# Log out and back in for group changes to take effect
+
+# Install kind
+curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+chmod +x ./kind
+sudo mv ./kind /usr/local/bin/kind
+
+# Create cluster with ingress support
+cat <<EOF | kind create cluster --config=-
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  kubeadmConfigPatches:
+  - |
+    kind: InitConfiguration
+    nodeRegistration:
+      kubeletExtraArgs:
+        node-labels: "ingress-ready=true"
+  extraPortMappings:
+  - containerPort: 80
+    hostPort: 80
+    protocol: TCP
+  - containerPort: 443
+    hostPort: 443
+    protocol: TCP
+EOF
+
+# Install nginx ingress controller
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+
+# Wait for ingress controller to be ready
+kubectl wait --namespace ingress-nginx \
+  --for=condition=ready pod \
+  --selector=app.kubernetes.io/component=controller \
+  --timeout=90s
+```
+
+#### Step 4: Verify your environment is ready
+```bash
+# Check that you have a working cluster
+kubectl get nodes
+# Should show at least one node in "Ready" status
+
+# Check default namespace
+kubectl get all
+# Should show default kubernetes service
+
+# Check if you can create resources
+kubectl auth can-i create deployments
+# Should return "yes"
+
+# For minikube users - get your node IP for later use
+minikube ip
+# Note this IP - you'll use it as <NODE_IP> in the lab
+
+# For kind users - use localhost (127.0.0.1) as your node IP
+echo "Your node IP for kind is: 127.0.0.1"
+```
+
+#### Step 5: Install additional tools for the lab
+```bash
+# Install curl (for testing web requests)
+sudo apt-get install -y curl
+
+# Install net-tools (for network diagnostics)
+sudo apt-get install -y net-tools
+
+# Install dig (for DNS testing)
+sudo apt-get install -y dnsutils
+
+# Verify tools are available
+curl --version
+netstat --version
+dig -v
+```
+
+#### Step 6: Set up your working directory
+```bash
+# Create a directory for this lab
+mkdir -p ~/k8s-lab-20
+cd ~/k8s-lab-20
+
+# Create a file to store important info during the lab
+echo "=== Lab 20 Environment Info ===" > lab-info.txt
+echo "Cluster Info:" >> lab-info.txt
+kubectl cluster-info >> lab-info.txt 2>&1
+echo "" >> lab-info.txt
+echo "Node Info:" >> lab-info.txt
+kubectl get nodes -o wide >> lab-info.txt
+echo "" >> lab-info.txt
+
+# Display the info
+cat lab-info.txt
+```
+
+### Environment Verification Checklist
+Run these commands and verify you get successful results:
+
+```bash
+# ✓ Cluster access
+kubectl get nodes
+# Expected: At least one node showing "Ready"
+
+# ✓ Can create resources  
+kubectl create namespace test-ns
+kubectl delete namespace test-ns
+# Expected: namespace created and deleted successfully
+
+# ✓ Network tools available
+curl --version && echo "curl: OK" || echo "curl: MISSING"
+dig -v 2>&1 | head -1 && echo "dig: OK" || echo "dig: MISSING"
+
+# ✓ For minikube users - ingress addon
+kubectl get pods -n ingress-nginx
+# Expected: Should show ingress controller pods in Running state
+
+echo "✓ Environment setup complete! Ready to start the lab."
+```
+
+---
+
+## 1. DEEP DIVE ANALYSIS
+
+### Task 1: Understanding Kubernetes Networking Fundamentals
+
+#### Subtask 1.1: Pod Network Isolation
+
+**ORIGINAL LAB STEP:**
+```bash
+# Create a simple Nginx deployment
+kubectl create deployment nginx --image=nginx:latest
+```
+**What this command does:**
+- `kubectl` - The Kubernetes command-line tool that talks to your cluster
+- `create deployment` - Tells Kubernetes to create a Deployment resource (manages Pods)
+- `nginx` - Name of the deployment (you can choose any name)
+- `--image=nginx:latest` - Specifies the Docker image to run (nginx web server, latest version)
+
+**VERIFICATION COMMANDS (from original lab):**
+```bash
+# Check that the deployment was created successfully
+kubectl get deployments
+# This shows all deployments in the current namespace
+# Expected output: deployment.apps/nginx created
+
+# Check the pods that were created by the deployment
+kubectl get pods
+# This shows individual pod instances
+# Expected: One pod with name like "nginx-xxxxxxxxx-xxxxx" in Running state
+```
+
+**ADDITIONAL MONITORING COMMANDS:**
+```bash
+# Get more detailed information about your deployment
+kubectl describe deployment nginx
+# Shows detailed info: replicas, image, selectors, events
+
+# Watch pods in real-time (useful to see startup process)
+kubectl get pods -w
+# Press Ctrl+C to stop watching
+
+# Get pod details including IP addresses
+kubectl get pods -o wide
+# Shows which node each pod is running on and their IP addresses
+
+# Check deployment events (troubleshooting)
+kubectl get events --sort-by=.metadata.creationTimestamp
+# Shows recent cluster events related to your deployment
+```
+
+**Line-by-line breakdown:**
+- `kubectl create deployment` - Creates a Deployment resource (higher-level controller)
+- `nginx` - Name of the deployment
+- `--image=nginx:latest` - Container image specification
+
+**Under the hood:**
+1. **API Server**: Receives the request and validates it
+2. **etcd**: Stores the Deployment specification
+3. **Controller Manager**: Deployment controller creates a ReplicaSet
+4. **ReplicaSet Controller**: Creates the desired number of Pods (default: 1)
+5. **Scheduler**: Assigns Pod to a suitable node
+6. **kubelet**: Downloads image and starts container
+7. **Container Runtime**: Actually runs the nginx process
+
+**Network Isolation Principle:**
+Each Pod gets its own IP address from the cluster's pod CIDR range. Without Services, these IPs are:
+- Ephemeral (change when Pod restarts)
+- Only accessible within the cluster network
+- Not load-balanced across multiple replicas
+
+### Understanding Service Types
+
+#### Subtask 1.2: Expose the Application Using ClusterIP
+
+**ORIGINAL LAB STEP:**
+```bash
+# Create a ClusterIP service
+kubectl expose deployment nginx --port=80 --type=ClusterIP --name=nginx-clusterip
+```
+**What this command does:**
+- `expose deployment nginx` - Creates a Service that points to the nginx deployment
+- `--port=80` - The port the service will listen on (incoming traffic port)
+- `--type=ClusterIP` - Makes service only accessible within the cluster (internal only)
+- `--name=nginx-clusterip` - Name for the service
+
+**ORIGINAL LAB VERIFICATION:**
+```bash
+# Verify the service was created
+kubectl get svc nginx-clusterip
+# Expected output showing ClusterIP and port 80/TCP
+```
+
+**COMPLETE VERIFICATION AND TESTING:**
+```bash
+# Get detailed service information
+kubectl describe svc nginx-clusterip
+# Shows endpoints, ports, selectors - very useful for troubleshooting
+
+# Check service endpoints (should show pod IPs)
+kubectl get endpoints nginx-clusterip
+# This shows which pod IPs are behind the service
+
+# Test the service from within the cluster
+kubectl run test-pod --image=busybox -it --rm --restart=Never -- /bin/sh
+# This creates a temporary pod and gives you a shell inside the cluster
+
+# Inside the test-pod shell, run these commands:
+# wget -qO- http://nginx-clusterip
+# wget -qO- http://nginx-clusterip.default.svc.cluster.local
+# exit
+# The first uses the service name, second uses the full DNS name
+
+# Alternative testing method (without interactive shell)
+kubectl run test-pod --image=busybox --rm -it --restart=Never -- wget -qO- http://nginx-clusterip
+# This runs the test and deletes the pod automatically
+
+# Check service DNS resolution
+kubectl run dns-test --image=busybox --rm -it --restart=Never -- nslookup nginx-clusterip
+# Shows the DNS resolution for the service name
+```
+
+**Technical breakdown:**
+- Creates a virtual IP address from the service CIDR range (typically 10.96.0.0/12)
+- **kube-proxy** component implements the service using one of three modes:
+  - **iptables mode** (default): Creates iptables rules for load balancing
+  - **IPVS mode**: More efficient for large clusters, uses Linux Virtual Server
+  - **userspace mode**: Legacy, proxy runs in userspace
+
+**What happens when you access ClusterIP:**
+1. Client sends request to ClusterIP:80
+2. iptables rules redirect traffic to one of the backend Pods
+3. Load balancing algorithm distributes requests (default: random selection)
+
+**Service Discovery Integration:**
+- DNS entry created: `nginx-clusterip.default.svc.cluster.local`
+- Environment variables injected into new Pods
+- Used for internal microservice communication
+
+#### Subtask 1.3: Expose the Application Using NodePort
+
+**ORIGINAL LAB STEP:**
+```bash
+# Create a NodePort service
+kubectl expose deployment nginx --port=80 --type=NodePort --name=nginx-nodeport
+```
+**What this command does:**
+- `--type=NodePort` - Exposes the service on every node's IP at a static port (30000-32767 range)
+- Creates both a ClusterIP AND opens a port on all cluster nodes
+- Kubernetes automatically assigns a port in the NodePort range if you don't specify one
+
+**ORIGINAL LAB VERIFICATION:**
+```bash
+# Verify the service
+kubectl get svc nginx-nodeport
+# Expected output showing NodePort with format like 80:30007/TCP
+```
+
+**COMPLETE TESTING COMMANDS:**
+```bash
+# Get the NodePort number (note the number after the colon)
+kubectl get svc nginx-nodeport -o jsonpath='{.spec.ports[0].nodePort}'
+echo  # Just adds a newline
+
+# Store the NodePort for easy reference
+export NODEPORT=$(kubectl get svc nginx-nodeport -o jsonpath='{.spec.ports[0].nodePort}')
+echo "NodePort is: $NODEPORT"
+
+# Get your node IP (method depends on your setup)
+# For minikube:
+minikube ip > node-ip.txt && cat node-ip.txt
+export NODE_IP=$(cat node-ip.txt)
+
+# For kind:
+# export NODE_IP="127.0.0.1"
+
+# For other clusters, get node IP:
+# kubectl get nodes -o wide
+
+echo "Node IP is: $NODE_IP"
+
+# Test access from your terminal (outside the cluster)
+curl http://$NODE_IP:$NODEPORT
+# Should show the nginx welcome page HTML
+
+# Test with just the headers (faster)
+curl -I http://$NODE_IP:$NODEPORT
+# Should show HTTP/1.1 200 OK
+
+# Check if the port is actually listening
+netstat -tlnp | grep :$NODEPORT || echo "Port $NODEPORT not found in netstat"
+
+# Describe the service to see all details
+kubectl describe svc nginx-nodeport
+```
+
+**Network path analysis:**
+1. **External client** → **Node IP:NodePort** → **ClusterIP:Port** → **Pod IP:TargetPort**
+2. NodePort range: 30000-32767 (configurable in kube-apiserver)
+3. **kube-proxy** ensures the NodePort is open on ALL nodes
+
+**Security implications:**
+- Exposes service on all nodes, even if no Pods are scheduled there
+- Firewall rules must allow traffic on NodePort range
+- No built-in SSL termination or path-based routing
+
+### Task 2: Advanced Traffic Routing
+
+#### Subtask 2.1: Expose Application via OpenShift Route (SKIP if using regular Kubernetes)
+
+**Note:** This section is only for OpenShift users. If you're using minikube or kind, skip to Subtask 2.2.
+
+**ORIGINAL LAB STEP (OpenShift only):**
+```bash
+# Create a Route (OpenShift only)
+oc expose svc nginx-nodeport --name=nginx-route
+```
+
+**ORIGINAL LAB VERIFICATION (OpenShift only):**
+```bash
+# Verify the Route (OpenShift only)
+oc get route nginx-route
+```
+
+**If you're using regular Kubernetes instead of OpenShift, you'll see:**
+```bash
+# This will fail on regular Kubernetes
+oc expose svc nginx-nodeport --name=nginx-route
+# Error: "oc: command not found" or similar
+
+echo "Skipping OpenShift Route section - using regular Kubernetes"
+```
+
+#### Subtask 2.2: Expose Application via Kubernetes Ingress (Standard Kubernetes)
+
+**ORIGINAL LAB STEP 1 - Deploy Ingress Controller:**
+```bash
+# Deploy an Ingress Controller (if not available)
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
+```
+**What this command does:**
+- Downloads and applies a YAML file that installs the nginx ingress controller
+- Creates necessary pods, services, and configurations for ingress routing
+- This is needed to make Ingress resources actually work
+
+**VERIFICATION FOR INGRESS CONTROLLER:**
+```bash
+# Wait for ingress controller to be ready
+kubectl wait --namespace ingress-nginx \
+  --for=condition=ready pod \
+  --selector=app.kubernetes.io/component=controller \
+  --timeout=90s
+# This waits up to 90 seconds for the controller pod to be ready
+
+# Check ingress controller status
+kubectl get pods -n ingress-nginx
+# Should show controller pod in Running state
+
+# Get ingress controller service details
+kubectl get svc -n ingress-nginx
+# Shows the ingress controller service configuration
+```
+
+**ORIGINAL LAB STEP 2 - Create Ingress Resource:**
+```bash
+# Create an Ingress resource
+cat <<EOF | kubectl apply -f -
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nginx-ingress
+spec:
+  rules:
+  - host: nginx.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: nginx-nodeport
+            port:
+              number: 80
+EOF
+```
+**What this YAML does:**
+- `apiVersion: networking.k8s.io/v1` - Uses the stable Ingress API
+- `host: nginx.example.com` - Routes traffic for this hostname
+- `path: /` - Matches all paths starting with /
+- `pathType: Prefix` - Matches URL path prefixes
+- `backend: service: name: nginx-nodeport` - Routes to our NodePort service
+
+**ORIGINAL LAB VERIFICATION:**
+```bash
+# Verify the Ingress
+kubectl get ingress nginx-ingress
+# Expected output showing the host and ingress IP
+```
+
+**COMPLETE TESTING SETUP:**
+```bash
+# Get ingress details
+kubectl describe ingress nginx-ingress
+# Shows rules, backends, events
+
+# Get the ingress IP (might take a few minutes to appear)
+kubectl get ingress nginx-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+echo
+
+# For minikube, get the ingress IP differently:
+minikube ip
+
+# Store the IP for testing
+export INGRESS_IP=$(minikube ip 2>/dev/null || echo "127.0.0.1")
+echo "Ingress IP: $INGRESS_IP"
+
+# Add host entry to /etc/hosts (needed for local testing)
+echo "Adding host entry to /etc/hosts..."
+echo "$INGRESS_IP nginx.example.com" | sudo tee -a /etc/hosts
+# This allows nginx.example.com to resolve to your ingress IP
+
+# Verify the host entry was added
+grep nginx.example.com /etc/hosts
+```
+
+**ORIGINAL LAB TESTING:**
+```bash
+# Test access externally
+curl http://nginx.example.com
+# Should show the nginx welcome page
+```
+
+**ADDITIONAL TESTING COMMANDS:**
+```bash
+# Test with verbose output to see the request flow
+curl -v http://nginx.example.com
+
+# Test just headers
+curl -I http://nginx.example.com
+
+# Test with different paths
+curl http://nginx.example.com/
+curl http://nginx.example.com/test
+
+# Test DNS resolution
+nslookup nginx.example.com
+# Should resolve to your ingress IP
+
+# Check ingress logs (for troubleshooting)
+kubectl logs -n ingress-nginx deployment/ingress-nginx-controller --tail=20
+
+# Test from inside cluster (should work with service name)
+kubectl run ingress-test --image=busybox --rm -it --restart=Never -- wget -qO- http://nginx-nodeport
+```
+
+**Ingress Controller Architecture:**
+1. **Controller Pod**: Watches Ingress resources via API server
+2. **ConfigMap Updates**: Generates nginx.conf or similar configuration
+3. **Reload Process**: Hot-reloads configuration without dropping connections
+4. **Service Discovery**: Dynamically updates backend endpoints
+
+**Path matching types:**
+- **Exact**: Matches the URL path exactly
+- **Prefix**: Matches based on URL path prefix split by '/'
+- **ImplementationSpecific**: Depends on the Ingress Class
+
+## 2. CONCEPT CONNECTIONS
+
+### Real-World Production Scenarios
+
+#### Microservices Architecture
+```
+Frontend App (Ingress) → API Gateway (ClusterIP) → User Service (ClusterIP)
+                                                 → Order Service (ClusterIP)
+                                                 → Payment Service (ClusterIP)
+```
+
+**Service Mesh Integration:**
+- Services integrate with Istio/Linkerd for advanced traffic management
+- mTLS encryption between services
+- Circuit breaking, retries, and timeouts
+- Distributed tracing and observability
+
+#### Multi-tenant Considerations
+- **Network Policies**: Restrict inter-service communication
+- **Resource Quotas**: Limit service endpoints per namespace
+- **RBAC**: Control who can expose services externally
+
+#### Cloud Provider Integration
+- **LoadBalancer services**: Integrate with cloud load balancers (ALB, NLB, GCP LB)
+- **External DNS**: Automatic DNS record management
+- **Service annotations**: Cloud-specific configurations
+
+### Performance and Scalability
+
+#### Service Performance Factors
+- **Endpoint slicing**: Large services split into multiple endpoint objects
+- **Connection pooling**: Reuse connections to backend Pods
+- **Session affinity**: Route requests to same Pod (sessionAffinity: ClientIP)
+
+#### Ingress Performance
+- **Connection limits**: Configure max connections per backend
+- **Rate limiting**: Prevent abuse and ensure fair usage
+- **Caching**: Static content caching at ingress layer
+- **Compression**: Enable gzip compression for responses
+
+## 3. TROUBLESHOOTING INSIGHTS
+
+### Common Service Issues
+
+#### DNS Resolution Problems
+```bash
+# Debug DNS resolution
+kubectl run -it --rm debug --image=busybox --restart=Never -- nslookup nginx-clusterip.default.svc.cluster.local
+
+# Check CoreDNS logs
+kubectl logs -n kube-system -l k8s-app=kube-dns
+```
+
+#### Endpoint Issues
+```bash
+# Check if service has endpoints
+kubectl get endpoints nginx-clusterip
+
+# Describe service for troubleshooting
+kubectl describe svc nginx-clusterip
+```
+
+**Common problems:**
+- **No endpoints**: Service selector doesn't match Pod labels
+- **Endpoints not ready**: Pods failing readiness probes
+- **Port mismatches**: Service port vs container port mismatch
+
+### Ingress Troubleshooting
+
+#### Controller Status Checks
+```bash
+# Check ingress controller pods
+kubectl get pods -n ingress-nginx
+
+# View controller logs
+kubectl logs -n ingress-nginx deployment/ingress-nginx-controller
+
+# Check ingress events
+kubectl describe ingress nginx-ingress
+```
+
+#### SSL/TLS Issues
+```bash
+# Check certificate status
+kubectl describe secret nginx-tls-secret
+
+# Test SSL handshake
+openssl s_client -connect nginx.example.com:443 -servername nginx.example.com
+```
+
+## 3. TROUBLESHOOTING INSIGHTS WITH COMPLETE COMMANDS
+
+### Common Service Issues and How to Debug Them
+
+#### DNS Resolution Problems
+```bash
+# Problem: Services not resolving by name
+# Debug DNS resolution step by step
+
+# 1. Check if CoreDNS is running
+kubectl get pods -n kube-system | grep -E "(coredns|kube-dns)"
+# Should show DNS pods in Running state
+
+# 2. Test basic DNS from inside cluster
+kubectl run dns-debug --image=busybox -it --rm --restart=Never -- nslookup kubernetes.default
+# Should resolve to cluster IP
+
+# 3. Test service DNS resolution
+kubectl run dns-debug --image=busybox -it --rm --restart=Never -- nslookup nginx-clusterip.default.svc.cluster.local
+# Should resolve to service ClusterIP
+
+# 4. Check CoreDNS configuration
+kubectl get configmap coredns -n kube-system -o yaml
+
+# 5. Check CoreDNS logs for errors
+kubectl logs -n kube-system -l k8s-app=kube-dns --tail=50
+
+# 6. Test if DNS works from specific pod
+kubectl exec -it $(kubectl get pods -l app=nginx -o jsonpath='{.items[0].metadata.name}') -- nslookup nginx-clusterip
+```
+
+#### Endpoint Issues - Service Not Working
+```bash
+# Problem: Service exists but doesn't route traffic
+
+# 1. Check if service has endpoints
+kubectl get endpoints nginx-clusterip
+# Should show pod IPs. If empty, selector doesn't match pods
+
+# 2. Compare service selector with pod labels
+echo "Service selector:"
+kubectl get svc nginx-clusterip -o jsonpath='{.spec.selector}' | jq .
+echo -e "\nPod labels:"
+kubectl get pods -l app=nginx --show-labels
+
+# 3. Check service details for configuration issues
+kubectl describe svc nginx-clusterip
+# Look for endpoints section
+
+# 4. Test if pods are actually responding
+POD_IP=$(kubectl get pods -l app=nginx -o jsonpath='{.items[0].status.podIP}')
+kubectl run endpoint-test --image=busybox --rm -it --restart=Never -- wget -qO- http://$POD_IP
+
+# 5. Check for network policies blocking traffic
+kubectl get networkpolicies -A
+kubectl describe networkpolicy -A
+```
+
+#### Port and Target Port Mismatches
+```bash
+# Problem: Service created but wrong ports configured
+
+# 1. Check pod's actual listening ports
+kubectl get pods -l app=nginx -o jsonpath='{.items[0].metadata.name}' | xargs -I {} kubectl exec {} -- netstat -tlnp
+
+# 2. Compare service ports with container ports
+echo "Service ports:"
+kubectl get svc nginx-clusterip -o jsonpath='{.spec.ports[*]}' | jq .
+echo -e "\nContainer ports:"
+kubectl get deployment nginx -o jsonpath='{.spec.template.spec.containers[0].ports[*]}' | jq .
+
+# 3. Test direct pod access
+kubectl port-forward $(kubectl get pods -l app=nginx -o jsonpath='{.items[0].metadata.name}') 8080:80 &
+curl http://localhost:8080
+# Stop port-forward: kill %1
+```
+
+### Ingress Troubleshooting
+
+#### Controller Status and Configuration Issues
+```bash
+# Problem: Ingress not working
+
+# 1. Check if ingress controller is running
+kubectl get pods -n ingress-nginx
+# All pods should be Running
+
+# 2. Check ingress controller logs
+kubectl logs -n ingress-nginx deployment/ingress-nginx-controller --tail=50
+# Look for errors related to your ingress
+
+# 3. Check ingress resource status
+kubectl describe ingress nginx-ingress
+# Look for events and backend information
+
+# 4. Verify ingress class (if using multiple controllers)
+kubectl get ingressclass
+kubectl describe ingress nginx-ingress | grep -i class
+
+# 5. Test ingress controller service
+kubectl get svc -n ingress-nginx
+kubectl describe svc -n ingress-nginx ingress-nginx-controller
+```
+
+#### Host Resolution and Routing Issues
+```bash
+# Problem: Host not resolving or routing incorrectly
+
+# 1. Check /etc/hosts entries
+grep example.com /etc/hosts
+# Should show your ingress IP mappings
+
+# 2. Test DNS resolution
+dig nginx.example.com
+nslookup nginx.example.com
+
+# 3. Test with IP directly (bypass DNS)
+export INGRESS_IP=$(minikube ip 2>/dev/null || echo "127.0.0.1")
+curl -H "Host: nginx.example.com" http://$INGRESS_IP
+
+# 4. Check ingress backend connectivity
+kubectl get ingress nginx-ingress -o yaml | grep -A 5 backend
+
+# 5. Verify backend service is working
+kubectl run backend-test --image=busybox --rm -it --restart=Never -- wget -qO- http://nginx-nodeport.default.svc.cluster.local
+```
+
+#### SSL/TLS Certificate Issues
+```bash
+# Problem: HTTPS not working
+
+# 1. Check if TLS secret exists and is valid
+kubectl get secret myapp-tls -o yaml
+kubectl describe secret myapp-tls
+
+# 2. Check certificate details
+kubectl get secret myapp-tls -o jsonpath='{.data.tls\.crt}' | base64 -d | openssl x509 -text -noout | grep -A 2 Subject
+
+# 3. Test SSL handshake
+openssl s_client -connect myapp.example.com:443 -servername myapp.example.com < /dev/null
+
+# 4. Check ingress annotations for SSL
+kubectl get ingress multi-app-ingress -o yaml | grep -A 5 annotations
+
+# 5. Test SSL redirect
+curl -v http://myapp.example.com 2>&1 | grep -i location
+# Should show redirect to HTTPS
+```
+
+### Network Connectivity Debugging Tools
+```bash
+# Complete network debugging toolkit
+
+# 1. Pod-to-Pod connectivity test
+kubectl run net-debug-1 --image=busybox --rm -it --restart=Never -- ping $(kubectl get pods -l app=nginx -o jsonpath='{.items[0].status.podIP}')
+
+# 2. Service connectivity from different namespaces
+kubectl run net-debug-2 --image=busybox -n frontend --rm -it --restart=Never -- wget -qO- http://nginx-clusterip.default.svc.cluster.local
+
+# 3. Check iptables rules (advanced - requires node access)
+# kubectl debug node/$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}') -it --image=busybox -- iptables -t nat -L | grep nginx
+
+# 4. Trace network path
+kubectl run traceroute --image=busybox --rm -it --restart=Never -- traceroute $(kubectl get svc nginx-clusterip -o jsonpath='{.spec.clusterIP}')
+
+# 5. Check cluster network configuration
+kubectl cluster-info dump | grep -E "(cluster-cidr|service-cidr)" | head -10
+```
+
+### Performance Troubleshooting
+```bash
+# Problem: Slow response times or timeouts
+
+# 1. Check pod resource usage
+kubectl top pods --sort-by=cpu
+kubectl top pods --sort-by=memory
+
+# 2. Check node resource usage
+kubectl top nodes
+
+# 3. Check for resource limits causing throttling
+kubectl describe pods -l app=nginx | grep -A 5 -B 5 -E "(Limits|Requests)"
+
+# 4. Test response times
+time curl http://nginx.example.com
+
+# 5. Check for network policies causing delays
+kubectl get networkpolicies -A
+
+# 6. Monitor real-time events
+kubectl get events --sort-by=.metadata.creationTimestamp -w
+```
+
+## 4. BONUS CHALLENGES (Complete Step-by-Step Commands)
+
+### Challenge 1: Advanced Load Balancing and Health Checks
+**Complete this AFTER finishing the original lab steps above.**
+
+#### Step 1: Create a multi-replica deployment with health checks
+```bash
+# Create YAML file for advanced deployment
+cat <<EOF > webapp-health.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webapp-health
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: webapp-health
+  template:
+    metadata:
+      labels:
+        app: webapp-health
+    spec:
+      containers:
+      - name: webapp
+        image: nginx:latest
+        ports:
+        - containerPort: 80
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 2
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+EOF
+
+# Apply the deployment
+kubectl apply -f webapp-health.yaml
+
+# Verify all 3 replicas are running
+kubectl get pods -l app=webapp-health
+
+# Check pod details including readiness
+kubectl get pods -l app=webapp-health -o wide
+```
+
+#### Step 2: Create service with session affinity
+```bash
+# Create service with session affinity
+cat <<EOF > webapp-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: webapp-health-svc
+spec:
+  selector:
+    app: webapp-health
+  ports:
+  - port: 80
+    targetPort: 80
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 3600
+EOF
+
+# Apply the service
+kubectl apply -f webapp-service.yaml
+
+# Verify service endpoints
+kubectl get endpoints webapp-health-svc
+# Should show all 3 pod IPs
+
+# Test load balancing
+for i in {1..10}; do 
+  kubectl run test-$i --image=busybox --rm --restart=Never -- wget -qO- http://webapp-health-svc | grep -o "nginx/[0-9.]*"
+done
+```
+
+#### Step 3: Simulate failures and test resilience
+```bash
+# Get pod names
+kubectl get pods -l app=webapp-health --no-headers -o custom-columns=":metadata.name"
+
+# Delete one pod to simulate failure
+FIRST_POD=$(kubectl get pods -l app=webapp-health --no-headers -o custom-columns=":metadata.name" | head -1)
+kubectl delete pod $FIRST_POD
+
+# Watch the replacement process
+kubectl get pods -l app=webapp-health -w
+# Press Ctrl+C after you see the new pod running
+
+# Test that service still works during pod replacement
+while true; do curl -s http://nginx.example.com > /dev/null && echo "✓ Service responding" || echo "✗ Service down"; sleep 2; done
+# Press Ctrl+C to stop
+```
+
+#### Step 4: Rolling update testing
+```bash
+# Update deployment image to trigger rolling update
+kubectl set image deployment/webapp-health webapp=nginx:1.21
+
+# Watch the rolling update process
+kubectl rollout status deployment/webapp-health
+
+# Check rollout history
+kubectl rollout history deployment/webapp-health
+
+# Rollback if needed
+kubectl rollout undo deployment/webapp-health
+```
+
+### Challenge 2: Multi-Path Ingress with SSL Termination
+**Complete this AFTER Challenge 1.**
+
+#### Step 1: Deploy multiple backend services
+```bash
+# Create API backend deployment
+cat <<EOF > api-backend.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api-backend
+  template:
+    metadata:
+      labels:
+        app: api-backend
+    spec:
+      containers:
+      - name: api
+        image: httpd:latest
+        ports:
+        - containerPort: 80
+        command: ["/bin/sh"]
+        args: ["-c", "echo '<h1>API Backend</h1><p>Version 1.0</p>' > /usr/local/apache2/htdocs/index.html && httpd-foreground"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-service
+spec:
+  selector:
+    app: api-backend
+  ports:
+  - port: 8080
+    targetPort: 80
+EOF
+
+# Create web backend deployment  
+cat <<EOF > web-backend.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web-backend
+  template:
+    metadata:
+      labels:
+        app: web-backend
+    spec:
+      containers:
+      - name: web
+        image: httpd:latest
+        ports:
+        - containerPort: 80
+        command: ["/bin/sh"]
+        args: ["-c", "echo '<h1>Web Frontend</h1><p>Main Application</p>' > /usr/local/apache2/htdocs/index.html && httpd-foreground"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-service
+spec:
+  selector:
+    app: web-backend
+  ports:
+  - port: 80
+    targetPort: 80
+EOF
+
+# Apply both deployments
+kubectl apply -f api-backend.yaml
+kubectl apply -f web-backend.yaml
+
+# Verify all pods are running
+kubectl get pods
+kubectl get services
+```
+
+#### Step 2: Create advanced ingress with path-based routing
+```bash
+# Create multi-path ingress
+cat <<EOF > multi-app-ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: multi-app-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/rate-limit: "10"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+spec:
+  rules:
+  - host: myapp.example.com
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: api-service
+            port:
+              number: 8080
+      - path: /web
+        pathType: Prefix
+        backend:
+          service:
+            name: web-service
+            port:
+              number: 80
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: web-service
+            port:
+              number: 80
+EOF
+
+# Apply the ingress
+kubectl apply -f multi-app-ingress.yaml
+
+# Add new host to /etc/hosts
+export INGRESS_IP=$(minikube ip 2>/dev/null || echo "127.0.0.1")
+echo "$INGRESS_IP myapp.example.com" | sudo tee -a /etc/hosts
+
+# Verify ingress configuration
+kubectl describe ingress multi-app-ingress
+```
+
+#### Step 3: Test path-based routing
+```bash
+# Test different paths
+echo "Testing root path:"
+curl http://myapp.example.com/
+
+echo -e "\nTesting web path:"
+curl http://myapp.example.com/web
+
+echo -e "\nTesting API path:"
+curl http://myapp.example.com/api
+
+# Test with verbose output to see routing
+curl -v http://myapp.example.com/api 2>&1 | grep -E "(GET|Host|HTTP)"
+```
+
+#### Step 4: Create self-signed SSL certificate
+```bash
+# Generate self-signed certificate
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout tls.key -out tls.crt \
+  -subj "/CN=myapp.example.com/O=myapp.example.com"
+
+# Create Kubernetes secret
+kubectl create secret tls myapp-tls --key tls.key --cert tls.crt
+
+# Update ingress to use TLS
+cat <<EOF > multi-app-ingress-tls.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: multi-app-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  tls:
+  - hosts:
+    - myapp.example.com
+    secretName: myapp-tls
+  rules:
+  - host: myapp.example.com
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: api-service
+            port:
+              number: 8080
+      - path: /web
+        pathType: Prefix
+        backend:
+          service:
+            name: web-service
+            port:
+              number: 80
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: web-service
+            port:
+              number: 80
+EOF
+
+# Apply TLS-enabled ingress
+kubectl apply -f multi-app-ingress-tls.yaml
+
+# Test HTTPS (ignore certificate warning for self-signed cert)
+curl -k https://myapp.example.com/api
+curl -k https://myapp.example.com/web
+```
+
+### Challenge 3: Traffic Splitting and Canary Deployments
+**Complete this AFTER Challenge 2.**
+
+#### Step 1: Create two versions of the same application
+```bash
+# Create version 1 deployment
+cat <<EOF > webapp-v1.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webapp-v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: webapp
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: webapp
+        version: v1
+    spec:
+      containers:
+      - name: webapp
+        image: nginx:latest
+        ports:
+        - containerPort: 80
+        command: ["/bin/sh"]
+        args: ["-c", "echo '<h1>Application Version 1.0</h1><p>Stable Release</p><p>Pod: \$HOSTNAME</p>' > /usr/share/nginx/html/index.html && nginx -g 'daemon off;'"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webapp-v1
+  labels:
+    version: v1
+spec:
+  selector:
+    app: webapp
+    version: v1
+  ports:
+  - port: 80
+    targetPort: 80
+EOF
+
+# Create version 2 deployment (canary)
+cat <<EOF > webapp-v2.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webapp-v2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webapp
+      version: v2
+  template:
+    metadata:
+      labels:
+        app: webapp
+        version: v2
+    spec:
+      containers:
+      - name: webapp
+        image: nginx:latest
+        ports:
+        - containerPort: 80
+        command: ["/bin/sh"]
+        args: ["-c", "echo '<h1>Application Version 2.0</h1><p>BETA Release</p><p>Pod: \$HOSTNAME</p>' > /usr/share/nginx/html/index.html && nginx -g 'daemon off;'"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webapp-v2
+  labels:
+    version: v2
+spec:
+  selector:
+    app: webapp
+    version: v2
+  ports:
+  - port: 80
+    targetPort: 80
+EOF
+
+# Deploy both versions
+kubectl apply -f webapp-v1.yaml
+kubectl apply -f webapp-v2.yaml
+
+# Verify deployments
+kubectl get pods -l app=webapp --show-labels
+kubectl get services -l app=webapp
+```
+
+#### Step 2: Implement traffic splitting with nginx annotations
+```bash
+# Create canary ingress for traffic splitting
+cat <<EOF > canary-ingress.yaml
+# Main ingress (90% traffic)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: webapp-main
+spec:
+  rules:
+  - host: canary.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: webapp-v1
+            port:
+              number: 80
+---
+# Canary ingress (10% traffic)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: webapp-canary
+  annotations:
+    nginx.ingress.kubernetes.io/canary: "true"
+    nginx.ingress.kubernetes.io/canary-weight: "10"
+spec:
+  rules:
+  - host: canary.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: webapp-v2
+            port:
+              number: 80
+EOF
+
+# Apply canary ingress
+kubectl apply -f canary-ingress.yaml
+
+# Add host entry
+echo "$INGRESS_IP canary.example.com" | sudo tee -a /etc/hosts
+
+# Test traffic distribution
+echo "Testing traffic split (should see ~90% v1, ~10% v2):"
+for i in {1..20}; do
+  curl -s http://canary.example.com | grep -o "Version [0-9.]*" 
+done | sort | uniq -c
+```
+
+#### Step 3: Header-based routing
+```bash
+# Create header-based canary routing
+cat <<EOF > header-canary.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: webapp-header-canary
+  annotations:
+    nginx.ingress.kubernetes.io/canary: "true"
+    nginx.ingress.kubernetes.io/canary-by-header: "X-Canary"
+    nginx.ingress.kubernetes.io/canary-by-header-value: "true"
+spec:
+  rules:
+  - host: canary.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: webapp-v2
+            port:
+              number: 80
+EOF
+
+# Apply header-based routing
+kubectl apply -f header-canary.yaml
+
+# Test header-based routing
+echo "Regular request (should get v1):"
+curl -s http://canary.example.com | grep "Version"
+
+echo "Request with canary header (should get v2):"
+curl -s -H "X-Canary: true" http://canary.example.com | grep "Version"
+
+echo "Request with wrong header value (should get v1):"
+curl -s -H "X-Canary: false" http://canary.example.com | grep "Version"
+```
+
+### Challenge 4: Network Security and Micro-segmentation
+**Complete this AFTER Challenge 3.**
+
+#### Step 1: Create multiple namespaces for separation
+```bash
+# Create namespaces for different tiers
+kubectl create namespace frontend
+kubectl create namespace backend  
+kubectl create namespace database
+
+# Label namespaces (used for network policies)
+kubectl label namespace frontend name=frontend
+kubectl label namespace backend name=backend
+kubectl label namespace database name=database
+
+# Verify namespaces
+kubectl get namespaces --show-labels
+```
+
+#### Step 2: Deploy applications in each namespace
+```bash
+# Deploy frontend application
+cat <<EOF > frontend-app.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+      role: web
+  template:
+    metadata:
+      labels:
+        app: frontend
+        role: web
+    spec:
+      containers:
+      - name: frontend
+        image: nginx:latest
+        ports:
+        - containerPort: 80
+        command: ["/bin/sh"]
+        args: ["-c", "echo '<h1>Frontend Application</h1><p>User Interface Layer</p>' > /usr/share/nginx/html/index.html && nginx -g 'daemon off;'"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-svc
+  namespace: frontend
+spec:
+  selector:
+    app: frontend
+  ports:
+  - port: 80
+EOF
+
+# Deploy backend application
+cat <<EOF > backend-app.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+      role: api
+  template:
+    metadata:
+      labels:
+        app: backend
+        role: api
+    spec:
+      containers:
+      - name: backend
+        image: nginx:latest
+        ports:
+        - containerPort: 80
+        command: ["/bin/sh"]
+        args: ["-c", "echo '<h1>Backend API</h1><p>Business Logic Layer</p>' > /usr/share/nginx/html/index.html && nginx -g 'daemon off;'"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-svc
+  namespace: backend
+spec:
+  selector:
+    app: backend
+  ports:
+  - port: 80
+EOF
+
+# Deploy database simulation
+cat <<EOF > database-app.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: database
+  namespace: database
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: database
+      role: db
+  template:
+    metadata:
+      labels:
+        app: database
+        role: db
+    spec:
+      containers:
+      - name: database
+        image: nginx:latest
+        ports:
+        - containerPort: 80
+        command: ["/bin/sh"]
+        args: ["-c", "echo '<h1>Database Layer</h1><p>Data Storage (Simulated)</p>' > /usr/share/nginx/html/index.html && nginx -g 'daemon off;'"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: database-svc
+  namespace: database
+spec:
+  selector:
+    app: database
+  ports:
+  - port: 5432
+    targetPort: 80
+EOF
+
+# Apply all applications
+kubectl apply -f frontend-app.yaml
+kubectl apply -f backend-app.yaml
+kubectl apply -f database-app.yaml
+
+# Verify all applications are running
+kubectl get pods -A | grep -E "(frontend|backend|database)"
+```
+
+#### Step 3: Test cross-namespace communication (before network policies)
+```bash
+# Test frontend can reach backend
+kubectl run test-frontend --image=busybox -n frontend --rm -it --restart=Never -- wget -qO- http://backend-svc.backend.svc.cluster.local
+
+# Test backend can reach database
+kubectl run test-backend --image=busybox -n backend --rm -it --restart=Never -- wget -qO- http://database-svc.database.svc.cluster.local:5432
+
+# These should work since no network policies are applied yet
+```
+
+#### Step 4: Implement restrictive network policies
+```bash
+# Create network policy for backend namespace
+cat <<EOF > backend-network-policy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-policy
+  namespace: backend
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: frontend
+    - podSelector:
+        matchLabels:
+          role: web
+    ports:
+    - protocol: TCP
+      port: 80
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: database
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to: []  # Allow DNS
+    ports:
+    - protocol: UDP
+      port: 53
+EOF
+
+# Create network policy for database namespace
+cat <<EOF > database-network-policy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: database-policy
+  namespace: database
+spec:
+  podSelector:
+    matchLabels:
+      app: database
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: backend
+    - podSelector:
+        matchLabels:
+          role: api
+    ports:
+    - protocol: TCP
+      port: 80
+EOF
+
+# Apply network policies
+kubectl apply -f backend-network-policy.yaml
+kubectl apply -f database-network-policy.yaml
+
+# Verify policies are created
+kubectl get networkpolicies -A
+```
+
+#### Step 5: Test network isolation
+```bash
+# Test that frontend can still reach backend
+kubectl run test-frontend-allowed --image=busybox -n frontend --rm -it --restart=Never -- wget -qO- http://backend-svc.backend.svc.cluster.local
+# This should work
+
+# Test that frontend CANNOT reach database directly
+kubectl run test-frontend-blocked --image=busybox -n frontend --rm -it --restart=Never --command -- sh -c "timeout 10 wget -qO- http://database-svc.database.svc.cluster.local:5432 || echo 'BLOCKED - This is expected!'"
+# This should fail/timeout - security working!
+
+# Test that backend can reach database
+kubectl run test-backend-allowed --image=busybox -n backend --rm -it --restart=Never -- sh -c "timeout 10 wget -qO- http://database-svc.database.svc.cluster.local:5432"
+# This should work
+
+# Test from default namespace (should be blocked)
+kubectl run test-default-blocked --image=busybox --rm -it --restart=Never -- sh -c "timeout 10 wget -qO- http://backend-svc.backend.svc.cluster.local || echo 'BLOCKED - Default namespace cannot reach backend'"
+```
+
+### Challenge 5: Performance Testing and Monitoring
+**Complete this AFTER Challenge 4.**
+
+#### Step 1: Install metrics server and monitoring tools
+```bash
+# For minikube, enable metrics server
+minikube addons enable metrics-server
+
+# For other clusters, install metrics server
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+
+# Wait for metrics server to be ready
+kubectl wait --for=condition=available --timeout=300s deployment/metrics-server -n kube-system
+
+# Verify metrics server is working
+kubectl top nodes
+kubectl top pods
+
+# Install Apache Bench for load testing (if not available)
+sudo apt-get update
+sudo apt-get install -y apache2-utils
+
+# Verify ab is installed
+ab -h | head -5
+```
+
+#### Step 2: Create horizontal pod autoscaler
+```bash
+# Create HPA for the original nginx deployment
+kubectl autoscale deployment nginx --cpu-percent=50 --min=1 --max=10
+
+# Create HPA for webapp-v1
+kubectl autoscale deployment webapp-v1 --cpu-percent=70 --min=2 --max=8
+
+# Check HPA status
+kubectl get hpa
+
+# Describe HPA for details
+kubectl describe hpa nginx
+```
+
+#### Step 3: Performance testing
+```bash
+# Load test the original nginx service (NodePort)
+export NODEPORT=$(kubectl get svc nginx-nodeport -o jsonpath='{.spec.ports[0].nodePort}')
+export NODE_IP=$(minikube ip 2>/dev/null || echo "127.0.0.1")
+
+echo "Starting load test on NodePort service..."
+echo "URL: http://$NODE_IP:$NODEPORT"
+
+# Light load test (100 requests, 10 concurrent)
+ab -n 100 -c 10 http://$NODE_IP:$NODEPORT/
+
+# Load test the ingress endpoint
+echo "Starting load test on Ingress..."
+ab -n 200 -c 20 http://nginx.example.com/
+
+# Monitor during load test (run in another terminal)
+# watch kubectl top pods
+# watch kubectl get hpa
+```
+
+#### Step 4: Monitor resource usage and scaling
+```bash
+# Generate sustained load to trigger autoscaling
+echo "Generating load to trigger autoscaling..."
+
+# Start background load generation
+kubectl run load-generator --image=busybox --restart=Never -- /bin/sh -c "while true; do wget -q --delete-after http://nginx-clusterip; done" &
+
+# Watch scaling in action
+kubectl get hpa -w &
+kubectl get pods -w &
+
+# Let it run for 2-3 minutes, then stop
+sleep 180
+
+# Stop load generation
+kubectl delete pod load-generator
+
+# Check final scaling results
+kubectl get pods
+kubectl get hpa
+kubectl describe hpa nginx
+```
+
+#### Step 5: Performance comparison and analysis
+```bash
+# Compare performance across service types
+echo "=== Performance Comparison ===" > performance-results.txt
+
+echo "1. ClusterIP Service (internal only):" >> performance-results.txt
+kubectl run perf-test --image=busybox --rm --restart=Never -- sh -c "
+time for i in \$(seq 1 50); do 
+  wget -q --delete-after http://nginx-clusterip; 
+done" 2>> performance-results.txt
+
+echo -e "\n2. NodePort Service:" >> performance-results.txt
+time for i in $(seq 1 50); do 
+  curl -s http://$NODE_IP:$NODEPORT > /dev/null; 
+done 2>> performance-results.txt
+
+echo -e "\n3. Ingress:" >> performance-results.txt
+time for i in $(seq 1 50); do 
+  curl -s http://nginx.example.com > /dev/null; 
+done 2>> performance-results.txt
+
+# Display results
+cat performance-results.txt
+
+# Check resource usage
+echo -e "\n=== Resource Usage ===" >> performance-results.txt
+kubectl top nodes >> performance-results.txt
+kubectl top pods >> performance-results.txt
+
+# Check ingress controller performance
+kubectl top pods -n ingress-nginx >> performance-results.txt
+
+echo "Performance analysis complete! Check performance-results.txt"
+```://nginx.example.com/
+
+# Kubernetes resource monitoring
+kubectl top nodes
+kubectl top pods
+
+# Custom metrics collection
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+```
+
+**Tasks:**
+1. Deploy metrics-server and monitoring stack
+2. Create horizontal pod autoscalers based on CPU/memory
+3. Implement custom metrics (request rate, response time)
+4. Load test different service configurations
+5. Optimize ingress controller settings for performance
+6. Measure and compare latency across service types
+
+## 5. EXPERT-LEVEL EXPLANATIONS
+
+### Advanced Service Concepts
+
+#### Headless Services
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-headless
+spec:
+  clusterIP: None  # This makes it headless
+  selector:
+    app: nginx
+  ports:
+  - port: 80
+```
+
+**Use cases:**
+- StatefulSets requiring stable network identities
+- Service discovery without load balancing
+- Database clusters with primary/secondary topology
+
+#### External Services
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: external-database
+spec:
+  type: ExternalName
+  externalName: database.company.com
+```
+
+**Professional usage:**
+- Abstracting external dependencies
+- Migration scenarios (internal to external services)
+- Multi-cloud service integration
+
+### Production Best Practices
+
+#### Service Naming Conventions
+```bash
+# Environment-specific naming
+kubectl create namespace production
+kubectl create namespace staging
+kubectl create namespace development
+
+# Service naming: <service>-<component>-<environment>
+# Example: user-api-production, user-db-staging
+```
+
+#### Resource Management
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: production-api
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: 'true'
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 443
+    targetPort: 8443
+  selector:
+    app: api
+    tier: production
+```
+
+#### Monitoring and Observability
+```yaml
+# Service Monitor for Prometheus
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nginx-monitor
+spec:
+  selector:
+    matchLabels:
+      app: nginx
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+```
+
+### Alternative Approaches
+
+#### Ambassador Pattern
+Instead of direct service exposure, use ambassador containers:
+```yaml
+# Ambassador proxy container
+- name: ambassador
+  image: envoyproxy/envoy:latest
+  ports:
+  - containerPort: 8080
+```
+
+#### Service Mesh Solutions
+- **Istio**: Advanced traffic management, security, observability
+- **Linkerd**: Lightweight, focus on simplicity and performance
+- **Consul Connect**: HashiCorp's service mesh solution
+
+### Common Anti-patterns
+
+1. **Exposing internal services externally**: Use API gateways instead
+2. **Hardcoding service IPs**: Always use DNS names
+3. **No health checks**: Always implement liveness and readiness probes
+4. **Ignoring resource limits**: Set appropriate CPU/memory limits
+5. **Single points of failure**: Always run multiple replicas for critical services
+
+### Official Documentation References
+
+- [Kubernetes Services](https://kubernetes.io/docs/concepts/services-networking/service/)
+- [Kubernetes Ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/)
+- [OpenShift Routes](https://docs.openshift.com/container-platform/4.11/networking/routes/route-configuration.html)
+- [Network Policies](https://kubernetes.io/docs/concepts/services-networking/network-policies/)
+- [DNS for Services](https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/)
+
+### Real-World Professional Usage
+
+#### GitOps Integration
+```yaml
+# ArgoCD Application for service deployment
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nginx-services
+spec:
+  source:
+    repoURL: https://github.com/company/k8s-services
+    path: nginx
+    targetRevision: HEAD
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: production
+```
+
+#### Infrastructure as Code
+```hcl
+# Terraform for Kubernetes services
+resource "kubernetes_service" "nginx" {
+  metadata {
+    name = "nginx-service"
+  }
+  spec {
+    selector = {
+      app = kubernetes_deployment.nginx.spec.0.template.0.metadata.0.labels.app
+    }
+    port {
+      port        = 80
+      target_port = 80
+    }
+    type = "ClusterIP"
+  }
+}
+```
+
+#### CI/CD Pipeline Integration
+```yaml
+# Example pipeline step for service deployment
+- name: Deploy Service
+  run: |
+    envsubst < service-template.yaml | kubectl apply -f -
+    kubectl rollout status deployment/nginx
+    kubectl wait --for=condition=ready pod -l app=nginx --timeout=300s
+```
+
+## 5. EXPERT-LEVEL EXPLANATIONS AND PROFESSIONAL USAGE
+
+### Advanced Service Concepts Explained
+
+#### Headless Services - When and Why
+```bash
+# Create a headless service (ClusterIP: None)
+cat <<EOF > headless-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-headless
+spec:
+  clusterIP: None  # This makes it headless
+  selector:
+    app: nginx
+  ports:
+  - port: 80
+EOF
+
+kubectl apply -f headless-service.yaml
+
+# Test headless service DNS (returns pod IPs, not service IP)
+kubectl run dns-test --image=busybox --rm -it --restart=Never -- nslookup nginx-headless.default.svc.cluster.local
+# Returns multiple A records (one for each pod)
+
+# Compare with regular service DNS
+kubectl run dns-test --image=busybox --rm -it --restart=Never -- nslookup nginx-clusterip.default.svc.cluster.local
+# Returns single A record (the service IP)
+```
+**When to use headless services:**
+- Database clusters needing direct pod communication
+- StatefulSets requiring stable network identities
+- Service discovery without load balancing
+- Peer-to-peer applications
+
+#### External Services - Abstracting External Dependencies
+```bash
+# Create service pointing to external resource
+cat <<EOF > external-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: external-database
+spec:
+  type: ExternalName
+  externalName: httpbin.org  # Using httpbin.org as example external service
+  ports:
+  - port: 80
+EOF
+
+kubectl apply -f external-service.yaml
+
+# Test external service access
+kubectl run external-test --image=busybox --rm -it --restart=Never -- wget -qO- http://external-database.default.svc.cluster.local/get
+# This should reach httpbin.org through the service abstraction
+```
+
+### Production-Ready Configurations
+
+#### Resource Management and Quality of Service
+```bash
+# Create production-ready deployment with proper resource management
+cat <<EOF > production-nginx.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-production
+  labels:
+    app: nginx-production
+    environment: production
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: nginx-production
+  template:
+    metadata:
+      labels:
+        app: nginx-production
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.21-alpine  # Specific version for production
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            cpu: 100m      # Guaranteed CPU
+            memory: 128Mi  # Guaranteed memory
+          limits:
+            cpu: 500m      # Maximum CPU
+            memory: 512Mi  # Maximum memory
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 101
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - name: cache-volume
+          mountPath: /var/cache/nginx
+        - name: run-volume
+          mountPath: /var/run
+      volumes:
+      - name: cache-volume
+        emptyDir: {}
+      - name: run-volume
+        emptyDir: {}
+EOF
+
+kubectl apply -f production-nginx.yaml
+
+# Verify deployment quality
+kubectl describe deployment nginx-production | grep -A 20 -E "(Strategy|Resources)"
+```
+
+#### Service Monitoring and Observability
+```bash
+# Add monitoring labels and annotations to services
+kubectl annotate service nginx-clusterip prometheus.io/scrape="true"
+kubectl annotate service nginx-clusterip prometheus.io/port="80"
+kubectl annotate service nginx-clusterip prometheus.io/path="/metrics"
+
+# Check service annotations
+kubectl get service nginx-clusterip -o yaml | grep -A 5 annotations
+
+# Create service monitor for monitoring stack (if Prometheus available)
+cat <<EOF > service-monitor.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nginx-monitor
+spec:
+  selector:
+    matchLabels:
+      app: nginx
+  endpoints:
+  - port: http
+    interval: 30s
+    path: /metrics
+EOF
+
+# Note: This requires Prometheus Operator to be installed
+# kubectl apply -f service-monitor.yaml
+echo "ServiceMonitor created (requires Prometheus Operator)"
+```
+
+### Common Anti-patterns and How to Avoid Them
+
+#### Anti-pattern 1: Hardcoding Service IPs
+```bash
+# ❌ WRONG: Don't do this
+# curl http://10.96.123.45  # Hardcoded ClusterIP
+
+# ✅ CORRECT: Use DNS names
+kubectl run correct-example --image=busybox --rm -it --restart=Never -- wget -qO- http://nginx-clusterip.default.svc.cluster.local
+
+# Show why hardcoding fails
+echo "Current ClusterIP:"
+kubectl get svc nginx-clusterip -o jsonpath='{.spec.clusterIP}'
+
+# Delete and recreate service (IP will change)
+kubectl delete svc nginx-clusterip
+kubectl expose deployment nginx --port=80 --type=ClusterIP --name=nginx-clusterip
+
+echo -e "\nNew ClusterIP:"
+kubectl get svc nginx-clusterip -o jsonpath='{.spec.clusterIP}'
+echo -e "\n(Notice the IP changed - this is why you use DNS names!)"
+```
+
+#### Anti-pattern 2: No Health Checks
+```bash
+# Show the importance of health checks
+
+# 1. Create deployment without health checks
+cat <<EOF > unhealthy-app.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: unhealthy-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: unhealthy-app
+  template:
+    metadata:
+      labels:
+        app: unhealthy-app
+    spec:
+      containers:
+      - name: app
+        image: nginx:latest
+        ports:
+        - containerPort: 80
+        command: ["/bin/sh"]
+        args: ["-c", "sleep 30 && nginx -g 'daemon off;'"]  # Simulate slow startup
+EOF
+
+kubectl apply -f unhealthy-app.yaml
+
+# 2. Expose service immediately
+kubectl expose deployment unhealthy-app --port=80 --name=unhealthy-svc
+
+# 3. Test service before pods are ready
+kubectl get pods -l app=unhealthy-app
+kubectl get endpoints unhealthy-svc
+# Endpoints might include pods that aren't ready yet
+
+# 4. Show the problem
+kubectl run health-test --image=busybox --rm --restart=Never -- sh -c "
+  echo 'Testing service during startup...'
+  wget -qO- http://unhealthy-svc || echo 'FAILED - Pod not ready yet'
+"
+
+# 5. Clean up
+kubectl delete deployment unhealthy-app
+kubectl delete svc unhealthy-svc
+```
+
+#### Anti-pattern 3: Single Points of Failure
+```bash
+# Demonstrate importance of multiple replicas
+
+# 1. Scale nginx deployment to 1 replica
+kubectl scale deployment nginx --replicas=1
+
+# 2. Show current setup
+kubectl get pods -l app=nginx
+kubectl get endpoints nginx-clusterip
+
+# 3. Delete the single pod to simulate failure
+kubectl delete pod $(kubectl get pods -l app=nginx -o jsonpath='{.items[0].metadata.name}')
+
+# 4. Test service during pod restart
+kubectl run failure-test --image=busybox --rm --restart=Never -- sh -c "
+  for i in \$(seq 1 10); do
+    wget -qO- http://nginx-clusterip >/dev/null 2>&1 && echo 'SUCCESS' || echo 'FAILED'
+    sleep 1
+  done
+"
+
+# 5. Scale back to multiple replicas for resilience
+kubectl scale deployment nginx --replicas=3
+kubectl get pods -l app=nginx
+```
+
+### Real-World Professional Usage Examples
+
+#### GitOps Integration with ArgoCD-style Configuration
+```bash
+# Create GitOps-ready configurations
+
+# 1. Create kustomization for environment-specific configs
+mkdir -p gitops-example/{base,overlays/production,overlays/staging}
+
+# Base configuration
+cat <<EOF > gitops-example/base/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- deployment.yaml
+- service.yaml
+- ingress.yaml
+
+commonLabels:
+  app.kubernetes.io/name: nginx
+  app.kubernetes.io/component: web-server
+EOF
+
+# Production overlay
+cat <<EOF > gitops-example/overlays/production/kustomization.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: production
+namePrefix: prod-
+nameSuffix: -v1
+
+resources:
+- ../../base
+
+replicas:
+- name: nginx
+  count: 5
+
+images:
+- name: nginx
+  newTag: 1.21-alpine
+
+patchesStrategicMerge:
+- resources.yaml
+EOF
+
+# Test kustomization (requires kustomize or kubectl with kustomize support)
+kubectl kustomize gitops-example/overlays/production/
+```
+
+#### Infrastructure as Code with Terraform-style Thinking
+```bash
+# Create reusable service templates
+
+# 1. Service template with environment variables
+cat <<EOF > service-template.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: \${SERVICE_NAME}
+  namespace: \${NAMESPACE}
+  labels:
+    environment: \${ENVIRONMENT}
+    version: \${VERSION}
+spec:
+  selector:
+    app: \${APP_NAME}
+    version: \${VERSION}
+  ports:
+  - port: \${SERVICE_PORT}
+    targetPort: \${TARGET_PORT}
+  type: \${SERVICE_TYPE}
+EOF
+
+# 2. Use envsubst to substitute variables
+export SERVICE_NAME="nginx-prod"
+export NAMESPACE="default"
+export ENVIRONMENT="production"
+export VERSION="v1"
+export APP_NAME="nginx"
+export SERVICE_PORT="80"
+export TARGET_PORT="80"
+export SERVICE_TYPE="ClusterIP"
+
+# Generate actual service YAML
+envsubst < service-template.yaml > nginx-prod-service.yaml
+
+# Apply the generated service
+kubectl apply -f nginx-prod-service.yaml
+
+# Verify templated service
+kubectl get svc nginx-prod -o yaml | grep -A 5 labels
+```
+
+#### CI/CD Pipeline Integration Commands
+```bash
+# Simulate CI/CD pipeline deployment process
+
+# 1. Deployment validation
+echo "=== Deployment Validation Phase ==="
+kubectl apply --dry-run=client -f webapp-health.yaml
+echo "✓ YAML syntax valid"
+
+# 2. Progressive deployment
+echo "=== Progressive Deployment Phase ==="
+kubectl apply -f webapp-health.yaml
+
+# 3. Wait for rollout completion
+kubectl rollout status deployment/webapp-health --timeout=300s
+echo "✓ Deployment completed"
+
+# 4. Health check validation
+echo "=== Health Check Validation ==="
+kubectl wait --for=condition=ready pod -l app=webapp-health --timeout=120s
+echo "✓ All pods ready"
+
+# 5. Service connectivity test
+kubectl run connectivity-test --image=busybox --rm --restart=Never -- sh -c "
+  wget -qO- http://webapp-health-svc >/dev/null && echo '✓ Service connectivity OK' || echo '✗ Service connectivity FAILED'
+"
+
+# 6. Load balancing verification
+echo "=== Load Balancing Test ==="
+for i in {1..5}; do
+  kubectl run lb-test-$i --image=busybox --rm --restart=Never -- wget -qO- http://webapp-health-svc | grep -o "Pod: webapp-health-[a-z0-9-]*"
+done | sort | uniq -c
+
+# 7. Canary deployment readiness check
+echo "=== Canary Deployment Check ==="
+kubectl get pods -l version=v2 --no-headers | wc -l | xargs -I {} echo "Canary pods: {}"
+kubectl get pods -l version=v1 --no-headers | wc -l | xargs -I {} echo "Stable pods: {}"
+```
+
+### Complete Lab Cleanup Script
+```bash
+# Comprehensive cleanup script - run this when completely done
+
+echo "=== Starting Complete Lab Cleanup ==="
+
+# Remove host entries
+sudo sed -i '/nginx.example.com/d' /etc/hosts
+sudo sed -i '/myapp.example.com/d' /etc/hosts  
+sudo sed -i '/canary.example.com/d' /etc/hosts
+echo "✓ Host entries removed"
+
+# Delete all ingress resources
+kubectl delete ingress --all
+echo "✓ Ingress resources deleted"
+
+# Delete all custom services (keep default kubernetes service)
+kubectl delete svc nginx-clusterip nginx-nodeport webapp-health-svc webapp-v1 webapp-v2 api-service web-service nginx-headless external-database nginx-prod unhealthy-svc 2>/dev/null
+echo "✓ Services deleted"
+
+# Delete all deployments
+kubectl delete deployment nginx webapp-health webapp-v1 webapp-v2 api-backend web-backend nginx-production unhealthy-app 2>/dev/null
+echo "✓ Deployments deleted"
+
+# Delete network policies
+kubectl delete networkpolicy --all -A 2>/dev/null
+echo "✓ Network policies deleted"
+
+# Delete custom namespaces
+kubectl delete namespace frontend backend database 2>/dev/null
+echo "✓ Custom namespaces deleted"
+
+# Delete secrets
+kubectl delete secret myapp-tls 2>/dev/null
+echo "✓ Secrets deleted"
+
+# Delete HPA
+kubectl delete hpa --all 2>/dev/null
+echo "✓ HPAs deleted"
+
+# Clean up files
+rm -f *.yaml *.txt *.key *.crt 2>/dev/null
+echo "✓ Lab files cleaned up"
+
+# Verify cleanup
+echo "=== Cleanup Verification ==="
+kubectl get all
+kubectl get ingress
+kubectl get networkpolicy -A
+
+echo "=== Lab Cleanup Complete! ==="
+```
+
+### Professional Monitoring and Logging Setup
+```bash
+# Set up logging and monitoring for production environments
+
+# 1. Check cluster logging setup
+kubectl get pods -n kube-system | grep -E "(fluentd|logstash|filebeat)"
+
+# 2. View logs from different perspectives
+echo "=== Log Analysis Examples ==="
+
+# Application logs
+kubectl logs -l app=nginx --tail=20
+
+# Previous container logs (if pod restarted)
+kubectl logs $(kubectl get pods -l app=nginx -o jsonpath='{.items[0].metadata.name}') --previous 2>/dev/null || echo "No previous logs"
+
+# Multiple containers in a pod
+kubectl logs $(kubectl get pods -l app=nginx -o jsonpath='{.items[0].metadata.name}') -c nginx
+
+# Logs from all replicas
+kubectl logs -l app=nginx --prefix=true --tail=10
+
+# 3. Events correlation
+kubectl get events --field-selector involvedObject.name=nginx --sort-by=.metadata.creationTimestamp
+
+# 4. Resource usage trends
+kubectl top pods -l app=nginx --containers
+```
+
+### Security Best Practices Implementation
+```bash
+# Implement security best practices
+
+# 1. Pod Security Standards
+cat <<EOF > secure-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: secure-nginx
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: secure-nginx
+  template:
+    metadata:
+      labels:
+        app: secure-nginx
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: nginx
+        image: nginx:1.21-alpine
+        ports:
+        - containerPort: 8080  # Non-privileged port
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - name: cache
+          mountPath: /var/cache/nginx
+        - name: run
+          mountPath: /var/run
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: cache
+        emptyDir: {}
+      - name: run
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+EOF
+
+kubectl apply -f secure-deployment.yaml
+
+# Verify security configuration
+kubectl describe pod $(kubectl get pods -l app=secure-nginx -o jsonpath='{.items[0].metadata.name}') | grep -A 10 "Security Context"
+```
+
+This complete guide now includes every command you need to run in your XFCE terminal, with detailed explanations of what each command does, why it's important, and how it connects to real-world professional usage. Each section builds upon the previous one while maintaining the original lab structure exactly as provided.
