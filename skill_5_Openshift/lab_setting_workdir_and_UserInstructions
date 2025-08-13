@@ -1,0 +1,497 @@
+# **Lab 4: Setting WORKDIR and USER Instructions (Enhanced)**
+
+## **Objectives**
+- Learn how to set the working directory (`WORKDIR`) in a Containerfile
+- Create and switch to a non-root user (`USER`) for improved container security
+- Verify container execution as a non-root user
+- Understand the security implications of running containers as non-root
+- **Enhanced**: Implement multi-stage builds with security hardening
+
+## **Prerequisites**
+- Basic understanding of container concepts
+- Podman or Docker installed (Podman recommended for OpenShift compatibility)
+- Text editor (Vim, Nano, or VS Code)
+- Linux/Unix-based system (or WSL2 for Windows users)
+
+## **Lab Setup**
+1. Verify Podman installation:
+   ```bash
+   podman --version
+   ```
+   *Expected Output*: Version number (e.g., `4.0.2`)
+
+2. **Enhanced Check**: Verify system capabilities:
+   ```bash
+   echo "=== System Information ==="
+   podman system info | grep -A 5 "host:"
+   echo "=== Available Base Images ==="
+   podman search --limit 3 ubi9/ubi-minimal
+   ```
+
+3. Create a lab directory:
+   ```bash
+   mkdir container-security-lab && cd container-security-lab
+   ```
+
+4. **Learning Enhancement**: Set up a monitoring workspace:
+   ```bash
+   mkdir logs
+   echo "Lab started at $(date)" > logs/lab_progress.log
+   ```
+
+## **Task 1: Using WORKDIR in Containerfile**
+
+### **Subtask 1.1: Create a Basic Containerfile**
+1. Create a new file named `Containerfile`:
+   ```bash
+   touch Containerfile
+   ```
+
+2. Open the file and add initial directives:
+   ```dockerfile
+   FROM registry.access.redhat.com/ubi9/ubi-minimal
+   LABEL maintainer="Your Name <your.email@example.com>"
+   ```
+
+3. **Learning Enhancement**: Examine the base image:
+   ```bash
+   echo "=== Analyzing Base Image ==="
+   podman pull registry.access.redhat.com/ubi9/ubi-minimal
+   podman inspect registry.access.redhat.com/ubi9/ubi-minimal | jq -r '.[] | {User: .Config.User, WorkingDir: .Config.WorkingDir, Env: .Config.Env}'
+   ```
+
+### **Subtask 1.2: Implement WORKDIR**
+1. Add `WORKDIR` instruction to set the working directory:
+   ```dockerfile
+   WORKDIR /app
+   ```
+
+2. Add verification steps:
+   ```dockerfile
+   RUN pwd > /tmp/workdir.log && whoami >> /tmp/workdir.log
+   ```
+
+3. **Learning Enhancement**: Add detailed logging:
+   ```dockerfile
+   RUN echo "=== Directory Structure ===" >> /tmp/workdir.log && \
+       ls -la / >> /tmp/workdir.log && \
+       echo "=== Current Working Directory ===" >> /tmp/workdir.log && \
+       pwd >> /tmp/workdir.log && \
+       echo "=== User Information ===" >> /tmp/workdir.log && \
+       id >> /tmp/workdir.log
+   ```
+
+4. Build the image:
+   ```bash
+   podman build -t workdir-demo .
+   ```
+
+5. **Enhanced Build Monitoring**:
+   ```bash
+   echo "=== Build History ==="
+   podman history workdir-demo --format "table {{.ID}}\t{{.CreatedBy}}\t{{.Size}}"
+   echo "=== Layer Analysis ==="
+   podman inspect workdir-demo | jq -r '.[0].RootFS.Layers[]'
+   ```
+
+6. Verify the working directory:
+   ```bash
+   podman run --rm workdir-demo cat /tmp/workdir.log
+   ```
+
+7. **Learning Enhancement**: Interactive verification:
+   ```bash
+   echo "=== Interactive Directory Verification ==="
+   podman run --rm -it workdir-demo bash -c "pwd && ls -la"
+   echo "=== Environment Variables ==="
+   podman run --rm workdir-demo env | grep -E "(PWD|HOME|USER)"
+   ```
+
+   *Expected Output*:
+   ```
+   /app
+   root
+   ```
+
+**Key Concept**: `WORKDIR` sets the default directory for all subsequent instructions and the container's runtime.
+
+## **Task 2: Creating a Non-Root User**
+
+### **Subtask 2.1: Add User Creation**
+1. Modify `Containerfile` to create a non-root user:
+   ```dockerfile
+   RUN microdnf install shadow-utils && \
+       useradd -u 1001 -d /home/appuser -m appuser && \
+       chown -R appuser:appuser /app
+   ```
+
+2. **Learning Enhancement**: Add user verification logging:
+   ```dockerfile
+   RUN echo "=== User Creation Verification ===" >> /tmp/user_creation.log && \
+       cat /etc/passwd | grep appuser >> /tmp/user_creation.log && \
+       ls -la /home/ >> /tmp/user_creation.log && \
+       ls -ld /app >> /tmp/user_creation.log
+   ```
+
+### **Subtask 2.2: Switch User with USER**
+1. Add the `USER` directive:
+   ```dockerfile
+   USER appuser
+   ```
+
+2. Update verification commands:
+   ```dockerfile
+   RUN whoami >> /tmp/user.log && ls -ld /app >> /tmp/user.log
+   ```
+
+3. **Learning Enhancement**: Add comprehensive user context logging:
+   ```dockerfile
+   RUN echo "=== Post-User Switch Information ===" >> /tmp/user.log && \
+       id >> /tmp/user.log && \
+       echo "Home directory:" >> /tmp/user.log && \
+       ls -la ~/ >> /tmp/user.log && \
+       echo "Writable directories:" >> /tmp/user.log && \
+       find / -writable -type d 2>/dev/null | head -10 >> /tmp/user.log
+   ```
+
+4. Rebuild and verify:
+   ```bash
+   podman build -t nonroot-demo .
+   podman run --rm nonroot-demo cat /tmp/user.log
+   ```
+
+5. **Enhanced Verification**:
+   ```bash
+   echo "=== User Creation Logs ==="
+   podman run --rm nonroot-demo cat /tmp/user_creation.log
+   echo "=== Image Security Analysis ==="
+   podman inspect nonroot-demo | jq -r '.[0].Config | {User: .User, WorkingDir: .WorkingDir}'
+   ```
+
+6. **Learning Enhancement**: Compare user contexts:
+   ```bash
+   echo "=== Root vs Non-Root Comparison ==="
+   echo "Root user capabilities:"
+   podman run --rm --user root nonroot-demo bash -c "id && echo 'Can write to /etc:' && touch /etc/test-file 2>&1 || echo 'Permission denied'"
+   echo "Non-root user capabilities:"
+   podman run --rm nonroot-demo bash -c "id && echo 'Can write to /etc:' && touch /etc/test-file 2>&1 || echo 'Permission denied'"
+   ```
+
+   *Expected Output*:
+   ```
+   appuser
+   drwxr-xr-x 2 appuser appuser 6 Mar 1 12:00 /app
+   ```
+
+**Security Note**: Running as non-root limits potential damage from container breaches.
+
+## **Task 3: Security Validation**
+
+### **Subtask 3.1: Test Privileged Operations**
+1. Attempt a restricted operation:
+   ```bash
+   podman run --rm nonroot-demo touch /sys/kernel/profiling
+   ```
+
+2. **Learning Enhancement**: Comprehensive privilege testing:
+   ```bash
+   echo "=== Security Boundary Testing ==="
+   echo "Test 1: System file modification"
+   podman run --rm nonroot-demo touch /etc/test-system-file 2>&1 || echo "✓ Blocked: Cannot modify system files"
+   echo "Test 2: Process management"
+   podman run --rm nonroot-demo kill -9 1 2>&1 || echo "✓ Blocked: Cannot kill init process"
+   echo "Test 3: Network configuration"
+   podman run --rm nonroot-demo ip addr add 127.0.0.2/32 dev lo 2>&1 || echo "✓ Blocked: Cannot modify network"
+   echo "Test 4: Mount operations"
+   podman run --rm nonroot-demo mount -t tmpfs tmpfs /mnt 2>&1 || echo "✓ Blocked: Cannot mount filesystems"
+   ```
+
+   *Expected Outcome*: Permission denied error
+
+### **Subtask 3.2: Verify User Context**
+1. Check running processes:
+   ```bash
+   podman run -d --name testuser nonroot-demo sleep 300
+   podman exec testuser ps -ef
+   ```
+
+2. **Learning Enhancement**: Detailed process analysis:
+   ```bash
+   echo "=== Process Security Analysis ==="
+   podman exec testuser ps -eo pid,ppid,user,comm,args
+   echo "=== Container Resource Limits ==="
+   podman stats testuser --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}"
+   echo "=== Security Context ==="
+   podman exec testuser cat /proc/self/status | grep -E "(Uid|Gid|Groups|CapEff|SeccompMode)"
+   ```
+
+3. **Cleanup**:
+   ```bash
+   podman stop testuser && podman rm testuser
+   ```
+
+   *Expected Output*: All processes should show `appuser` as owner
+
+**Troubleshooting Tip**: If permissions fail, ensure:
+* User has execute permissions on required binaries
+* Filesystem paths are correctly owned
+
+## **Task 4: Security Implications Analysis**
+
+### **Subtask 4.1: Risk Comparison**
+1. Run as root for comparison:
+   ```bash
+   podman run --rm --user root workdir-demo whoami
+   ```
+
+2. Contrast with:
+   ```bash
+   podman run --rm nonroot-demo whoami
+   ```
+
+3. **Learning Enhancement**: Comprehensive security comparison:
+   ```bash
+   echo "=== Security Risk Assessment ==="
+   echo "Root Container Capabilities:"
+   podman run --rm --user root nonroot-demo bash -c "
+   echo 'User: '$(id)
+   echo 'Can read sensitive files: '$(test -r /etc/shadow && echo 'YES ⚠️' || echo 'NO ✓')
+   echo 'Can modify system: '$(test -w /etc && echo 'YES ⚠️' || echo 'NO ✓')
+   echo 'Process capabilities: '$(cat /proc/self/status | grep CapEff)
+   "
+   
+   echo ""
+   echo "Non-Root Container Capabilities:"
+   podman run --rm nonroot-demo bash -c "
+   echo 'User: '$(id)
+   echo 'Can read sensitive files: '$(test -r /etc/shadow && echo 'YES ⚠️' || echo 'NO ✓')
+   echo 'Can modify system: '$(test -w /etc && echo 'YES ⚠️' || echo 'NO ✓')
+   echo 'Process capabilities: '$(cat /proc/self/status | grep CapEff)
+   "
+   ```
+
+**Key Findings**:
+* Root containers can modify system files
+* Non-root containers are limited to their assigned permissions
+* **Principle of Least Privilege**: Always grant minimum necessary permissions
+
+## **Bonus Task: Advanced Security Hardening with Multi-Stage Build**
+
+### **Objective**
+Implement a production-ready container with multi-stage builds, distroless images, and advanced security features.
+
+### **Step 1: Create Advanced Containerfile**
+1. Create a new file called `Containerfile.advanced`:
+   ```bash
+   cat << 'EOF' > Containerfile.advanced
+   # Stage 1: Build environment with full tools
+   FROM registry.access.redhat.com/ubi9/ubi-minimal AS builder
+   
+   # Install build dependencies
+   RUN microdnf install -y shadow-utils coreutils findutils && \
+       microdnf clean all
+   
+   # Create application user in build stage
+   RUN useradd -u 1001 -r -g 0 -d /app -s /sbin/nologin appuser && \
+       mkdir -p /app/bin /app/data && \
+       chown -R appuser:0 /app && \
+       chmod -R g=u /app
+   
+   # Create a simple application
+   RUN echo '#!/bin/bash' > /app/bin/app.sh && \
+       echo 'echo "=== Application Security Report ===="' >> /app/bin/app.sh && \
+       echo 'echo "Running as user: $(id)"' >> /app/bin/app.sh && \
+       echo 'echo "Working directory: $(pwd)"' >> /app/bin/app.sh && \
+       echo 'echo "Available commands: $(ls /bin /usr/bin | wc -l) binaries"' >> /app/bin/app.sh && \
+       echo 'echo "Writable paths:"' >> /app/bin/app.sh && \
+       echo 'find / -writable -type d 2>/dev/null | head -5' >> /app/bin/app.sh && \
+       echo 'echo "=== Security Test ==="' >> /app/bin/app.sh && \
+       echo 'echo "Testing file creation in /app/data..."' >> /app/bin/app.sh && \
+       echo 'touch /app/data/test-$(date +%s).txt && echo "✓ Success" || echo "✗ Failed"' >> /app/bin/app.sh && \
+       chmod +x /app/bin/app.sh
+   
+   # Stage 2: Minimal runtime environment
+   FROM registry.access.redhat.com/ubi9/ubi-micro AS runtime
+   
+   # Copy user configuration from builder
+   COPY --from=builder /etc/passwd /etc/passwd
+   COPY --from=builder /etc/group /etc/group
+   
+   # Copy application files with correct ownership
+   COPY --from=builder --chown=appuser:0 /app /app
+   
+   # Set security labels
+   LABEL security.privilege="unprivileged" \
+         security.user="appuser" \
+         security.capabilities="none"
+   
+   # Configure runtime
+   WORKDIR /app
+   USER appuser
+   
+   # Health check
+   HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+     CMD /app/bin/app.sh > /dev/null || exit 1
+   
+   # Default command
+   CMD ["/app/bin/app.sh"]
+   EOF
+   ```
+
+### **Step 2: Build and Test Advanced Container**
+1. Build the multi-stage image:
+   ```bash
+   podman build -f Containerfile.advanced -t secure-app:advanced .
+   ```
+
+2. **Enhanced Build Analysis**:
+   ```bash
+   echo "=== Multi-Stage Build Analysis ==="
+   podman images | grep -E "(secure-app|ubi9)"
+   echo ""
+   echo "=== Size Comparison ==="
+   echo "Single-stage image (nonroot-demo):"
+   podman inspect nonroot-demo --format "{{.Size}}" | numfmt --to=iec
+   echo "Multi-stage image (secure-app:advanced):"
+   podman inspect secure-app:advanced --format "{{.Size}}" | numfmt --to=iec
+   echo ""
+   echo "=== Layer Analysis ==="
+   podman history secure-app:advanced --format "table {{.ID}}\t{{.CreatedBy}}\t{{.Size}}"
+   ```
+
+### **Step 3: Security Validation**
+1. Run the secure application:
+   ```bash
+   echo "=== Secure Application Execution ==="
+   podman run --rm secure-app:advanced
+   ```
+
+2. **Comprehensive Security Testing**:
+   ```bash
+   echo "=== Advanced Security Testing ==="
+   
+   # Test 1: Container scanning (if available)
+   echo "Container Security Scan:"
+   podman run --rm secure-app:advanced rpm -qa | wc -l
+   echo "Installed packages (should be minimal)"
+   
+   # Test 2: Capability analysis
+   echo ""
+   echo "Capability Analysis:"
+   podman run --rm secure-app:advanced bash -c "cat /proc/self/status | grep -E 'Cap(Inh|Prm|Eff|Bnd|Amb)'"
+   
+   # Test 3: Filesystem security
+   echo ""
+   echo "Filesystem Security:"
+   podman run --rm secure-app:advanced bash -c "
+   echo 'Read-only paths test:'
+   for path in /etc /usr /bin /sbin; do
+     echo -n \$path: 
+     touch \$path/test 2>/dev/null && echo 'WRITABLE ⚠️' || echo 'READ-ONLY ✓'
+   done
+   "
+   
+   # Test 4: Resource constraints
+   echo ""
+   echo "Resource Constraint Test:"
+   podman run --rm --memory=128m --cpus=0.5 secure-app:advanced
+   ```
+
+### **Step 4: Production Deployment Simulation**
+1. **Deploy with security constraints**:
+   ```bash
+   echo "=== Production-Ready Deployment ==="
+   podman run -d --name secure-prod \
+     --read-only \
+     --tmpfs /tmp:rw,noexec,nosuid,size=100m \
+     --security-opt no-new-privileges:true \
+     --cap-drop=ALL \
+     --memory=256m \
+     --cpus=0.5 \
+     --restart=unless-stopped \
+     secure-app:advanced
+   ```
+
+2. **Monitor the secure deployment**:
+   ```bash
+   echo "=== Production Monitoring ==="
+   sleep 2
+   podman logs secure-prod
+   echo ""
+   echo "Security Status:"
+   podman inspect secure-prod | jq -r '.[] | {
+     ReadonlyRootfs: .HostConfig.ReadonlyRootfs,
+     Memory: .HostConfig.Memory,
+     CpuQuota: .HostConfig.CpuQuota,
+     SecurityOpt: .HostConfig.SecurityOpt,
+     CapDrop: .HostConfig.CapDrop
+   }'
+   ```
+
+3. **Health check validation**:
+   ```bash
+   echo "=== Health Check Validation ==="
+   sleep 35  # Wait for health check interval
+   podman inspect secure-prod --format "{{.State.Health.Status}}"
+   podman inspect secure-prod --format "{{range .State.Health.Log}}{{.Output}}{{end}}"
+   ```
+
+4. **Cleanup**:
+   ```bash
+   podman stop secure-prod && podman rm secure-prod
+   ```
+
+### **Bonus Learning: Security Benchmarking**
+```bash
+echo "=== Security Benchmark Summary ===" | tee logs/security_benchmark.log
+
+echo "1. User Security:" | tee -a logs/security_benchmark.log
+podman run --rm secure-app:advanced id | tee -a logs/security_benchmark.log
+
+echo "2. Filesystem Security:" | tee -a logs/security_benchmark.log
+podman run --rm secure-app:advanced bash -c "mount | grep -E '(ro,|rw,)'" | head -5 | tee -a logs/security_benchmark.log
+
+echo "3. Network Security:" | tee -a logs/security_benchmark.log
+podman run --rm secure-app:advanced bash -c "ss -tuln 2>/dev/null | wc -l || echo 'No listening ports'" | tee -a logs/security_benchmark.log
+
+echo "4. Process Security:" | tee -a logs/security_benchmark.log
+podman run --rm secure-app:advanced bash -c "ps aux | wc -l" | tee -a logs/security_benchmark.log
+
+echo "Security benchmark saved to logs/security_benchmark.log"
+```
+
+## **Conclusion**
+* **Achieved**:
+  * Configured `WORKDIR` for consistent file paths
+  * Created and switched to non-root users
+  * Validated security restrictions
+  * **Bonus**: Implemented multi-stage builds with advanced security hardening
+* **Best Practices**:
+  * Always use `USER` with explicitly created users
+  * Combine with filesystem permission controls
+  * Use `podman unshare` for advanced user namespace configurations
+  * **Advanced**: Implement multi-stage builds for minimal attack surface
+  * **Advanced**: Use distroless or micro images for production
+  * **Advanced**: Apply runtime security constraints
+
+## **Next Steps**
+1. Explore Podman's `--userns=keep-id` flag for host-user matching
+2. Implement read-only filesystems with `--read-only`
+3. Study Red Hat's Container Hardening Guide
+4. **Advanced**: Implement container image signing and verification
+5. **Advanced**: Explore Pod Security Standards (PSS) for Kubernetes/OpenShift
+
+## **Lab Summary Report**
+```bash
+echo "=== Lab Completion Summary ===" | tee logs/lab_completion.log
+echo "Date: $(date)" | tee -a logs/lab_completion.log
+echo "Images created:" | tee -a logs/lab_completion.log
+podman images --format "table {{.Repository}}:{{.Tag}}\t{{.Size}}\t{{.Created}}" | grep -E "(workdir-demo|nonroot-demo|secure-app)" | tee -a logs/lab_completion.log
+echo "Lab completed successfully!" | tee -a logs/lab_completion.log
+```
+
+## **Cleanup**
+```bash
+podman rmi workdir-demo nonroot-demo secure-app:advanced 2>/dev/null || true
+cd .. && rm -rf container-security-lab
+```
