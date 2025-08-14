@@ -1,0 +1,840 @@
+# Lab 7: Parameterized ENTRYPOINT Scripts - Enhanced Edition
+
+## **Objectives**
+- Understand the role of ENTRYPOINT in container initialization
+- Create and test ENTRYPOINT scripts that handle environment-specific logic
+- Implement parameter passing between CMD and ENTRYPOINT
+- Distinguish between development and production modes in container execution
+
+## **Prerequisites**
+- Podman installed on XFCE desktop environment
+- Basic Linux command line knowledge
+- Familiarity with shell scripting
+- Text editor (nano recommended for beginners)
+
+## **Lab Setup**
+
+### Step 1: Environment Preparation
+```bash
+# Open XFCE terminal (Applications → Terminal Emulator)
+# Verify Podman installation and system readiness
+podman --version
+```
+
+```bash
+# Check system resources
+free -h
+echo "✓ System resources checked"
+```
+
+```bash
+# Create our dedicated lab workspace
+mkdir -p ~/entrypoint-lab && cd ~/entrypoint-lab
+```
+
+```bash
+# Confirm we're in the right location
+pwd
+echo "🚀 Lab workspace created at: $(pwd)"
+```
+
+```bash
+# Check if we have bash available (needed for our scripts)
+which bash
+echo "✓ Bash shell available for scripting"
+```
+
+---
+
+## **Task 1: Create a Basic ENTRYPOINT Script**
+
+### Subtask 1.1: Write the Shell Script
+
+```bash
+# Create our first entrypoint script
+nano entrypoint.sh
+```
+
+**Content for entrypoint.sh:**
+```bash
+#!/bin/bash
+
+echo "🚀 Container starting..."
+echo "👤 Executing as user: $(whoami)"
+echo "📁 Current directory: $(pwd)"
+echo "🕒 Current time: $(date)"
+echo "🐧 System info: $(uname -a)"
+```
+
+**Save and exit nano:** `Ctrl+X`, then `Y`, then `Enter`
+
+### Subtask 1.2: Make the Script Executable
+
+```bash
+# Make the script executable
+chmod +x entrypoint.sh
+```
+
+```bash
+# Verify permissions were set correctly
+ls -la entrypoint.sh
+echo "✓ Script is now executable with proper permissions"
+```
+
+```bash
+# Test the script locally first
+echo "🧪 Testing script locally:"
+./entrypoint.sh
+```
+
+### Subtask 1.3: Create the Containerfile
+
+```bash
+# Create our first Containerfile
+nano Containerfile
+```
+
+**Content for Containerfile:**
+```dockerfile
+FROM alpine:latest
+
+# Install bash (Alpine uses sh by default)
+RUN apk add --no-cache bash
+
+# Copy our entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+
+# Set the entrypoint
+ENTRYPOINT ["/entrypoint.sh"]
+```
+
+### Subtask 1.4: Build and Run the Container
+
+```bash
+# Build the container image
+podman build -t entrypoint-demo .
+```
+
+```bash
+# Verify the image was created
+podman images | grep entrypoint-demo
+echo "✓ Image built successfully!"
+```
+
+```bash
+# Run our first test
+echo "🎯 Running basic ENTRYPOINT test:"
+podman run entrypoint-demo
+```
+
+```bash
+# Let's see what's different from running locally vs in container
+echo ""
+echo "=== Comparison: Local vs Container ==="
+echo "Local execution:"
+./entrypoint.sh
+echo ""
+echo "Container execution:"
+podman run entrypoint-demo
+echo ""
+echo "💡 Notice the differences in user, directory, and environment!"
+```
+
+---
+
+## **Task 2: Implement Parameter Handling**
+
+### Subtask 2.1: Modify the Entrypoint Script
+
+```bash
+# Create an enhanced version with parameter handling
+nano entrypoint.sh
+```
+
+**Updated content for entrypoint.sh:**
+```bash
+#!/bin/bash
+
+echo "🚀 Container starting with arguments: $@"
+echo "📊 Total number of arguments: $#"
+echo "🎯 First argument: ${1:-none provided}"
+echo "🎯 Second argument: ${2:-none provided}"
+echo "🎯 All arguments: $*"
+
+# Show environment info
+echo ""
+echo "📋 Container Environment:"
+echo "👤 User: $(whoami)"
+echo "📁 PWD: $(pwd)"
+echo "🕒 Time: $(date)"
+
+# Execute the command passed from CMD or runtime
+echo ""
+echo "⚡ Executing command: $@"
+exec "$@"
+```
+
+### Subtask 2.2: Update the Containerfile
+
+```bash
+# Update our Containerfile to include CMD
+nano Containerfile
+```
+
+**Updated Containerfile content:**
+```dockerfile
+FROM alpine:latest
+
+# Install bash and other useful tools
+RUN apk add --no-cache bash coreutils
+
+# Copy our enhanced entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+
+# Set the entrypoint and default command
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["echo", "Default command executed successfully! 🎉"]
+```
+
+### Subtask 2.3: Test Different Scenarios
+
+```bash
+# Rebuild with our enhanced script
+podman build -t entrypoint-demo .
+```
+
+```bash
+# Test 1: Run with default CMD
+echo "=== Test 1: Default CMD Behavior ==="
+podman run entrypoint-demo
+```
+
+```bash
+# Test 2: Override CMD at runtime
+echo ""
+echo "=== Test 2: Overriding CMD ==="
+podman run entrypoint-demo ls -la /
+```
+
+```bash
+# Test 3: Complex command override
+echo ""
+echo "=== Test 3: Complex Command ==="
+podman run entrypoint-demo sh -c "echo 'Hello from inside!' && whoami && pwd"
+```
+
+```bash
+# Test 4: Multiple arguments
+echo ""
+echo "=== Test 4: Multiple Arguments ==="
+podman run entrypoint-demo echo "Arg1" "Arg2" "Arg3" "🎉"
+```
+
+```bash
+# Understanding check
+echo ""
+echo "💡 Understanding Check:"
+echo "Notice how our entrypoint script receives and processes all arguments!"
+echo "The 'exec \$@' line is what actually runs the command."
+```
+
+---
+
+## **Task 3: Environment-Specific Logic**
+
+### Subtask 3.1: Create Mode Detection Script
+
+```bash
+# Create advanced entrypoint with environment detection
+nano entrypoint.sh
+```
+
+**Advanced entrypoint.sh content:**
+```bash
+#!/bin/bash
+
+echo "🚀 Container Initialization Starting..."
+echo "======================================"
+
+# Environment detection with detailed feedback
+if [ "$ENV_MODE" = "production" ]; then
+    echo "🏭 PRODUCTION MODE ACTIVATED"
+    echo "   ✓ Strict security settings applied"
+    echo "   ✓ Performance optimizations enabled"
+    echo "   ✓ Detailed logging disabled for security"
+    echo "   ✓ Debug features disabled"
+    
+    # Production-specific environment setup
+    export LOG_LEVEL=ERROR
+    export DEBUG_MODE=false
+    
+elif [ "$ENV_MODE" = "development" ]; then
+    echo "🛠️  DEVELOPMENT MODE ACTIVATED"
+    echo "   ✓ Debug features enabled"
+    echo "   ✓ Verbose logging activated"
+    echo "   ✓ Hot-reload capabilities enabled"
+    echo "   ✓ Security restrictions relaxed"
+    
+    # Development-specific environment setup
+    export LOG_LEVEL=DEBUG
+    export DEBUG_MODE=true
+    
+elif [ "$ENV_MODE" = "testing" ]; then
+    echo "🧪 TESTING MODE ACTIVATED"
+    echo "   ✓ Test fixtures loaded"
+    echo "   ✓ Mock services enabled"
+    echo "   ✓ Coverage reporting enabled"
+    
+    # Testing-specific environment setup
+    export LOG_LEVEL=INFO
+    export DEBUG_MODE=true
+    export ENABLE_MOCKS=true
+    
+else
+    echo "⚙️  DEFAULT MODE (No ENV_MODE specified)"
+    echo "   ✓ Standard configuration applied"
+    echo "   ✓ Balanced security and debugging"
+    
+    # Default environment setup
+    export LOG_LEVEL=INFO
+    export DEBUG_MODE=false
+fi
+
+echo "======================================"
+echo "📋 Final Environment Configuration:"
+echo "   LOG_LEVEL: $LOG_LEVEL"
+echo "   DEBUG_MODE: $DEBUG_MODE"
+echo "   ENABLE_MOCKS: ${ENABLE_MOCKS:-false}"
+echo "======================================"
+echo ""
+
+# Show what command we're about to execute
+echo "⚡ Executing: $@"
+echo ""
+
+# Execute the provided command
+exec "$@"
+```
+
+### Subtask 3.2: Update Containerfile for Environment Variables
+
+```bash
+# Update Containerfile with environment support
+nano Containerfile
+```
+
+**Updated Containerfile:**
+```dockerfile
+FROM alpine:latest
+
+# Install bash and useful utilities
+RUN apk add --no-cache bash coreutils curl
+
+# Set default environment (can be overridden at runtime)
+ENV LOG_LEVEL=INFO
+ENV DEBUG_MODE=false
+
+# Copy our advanced entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+
+# Set the entrypoint and default command
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["echo", "Container running with environment:", "$ENV_MODE"]
+```
+
+### Subtask 3.3: Test Different Modes
+
+```bash
+# Rebuild with environment support
+podman build -t entrypoint-demo .
+```
+
+```bash
+# Test Development Mode
+echo "=== Testing Development Mode ==="
+podman run -e ENV_MODE=development entrypoint-demo
+```
+
+```bash
+# Test Production Mode
+echo ""
+echo "=== Testing Production Mode ==="
+podman run -e ENV_MODE=production entrypoint-demo
+```
+
+```bash
+# Test Testing Mode
+echo ""
+echo "=== Testing Testing Mode ==="
+podman run -e ENV_MODE=testing entrypoint-demo
+```
+
+```bash
+# Test Default Mode
+echo ""
+echo "=== Testing Default Mode ==="
+podman run entrypoint-demo
+```
+
+```bash
+# Interactive comparison
+echo ""
+echo "=== Side-by-Side Mode Comparison ==="
+echo "Development vs Production:"
+echo ""
+echo "DEV OUTPUT:"
+podman run -e ENV_MODE=development entrypoint-demo echo "Dev command executed"
+echo ""
+echo "PROD OUTPUT:"
+podman run -e ENV_MODE=production entrypoint-demo echo "Prod command executed"
+```
+
+---
+
+## **Task 4: Advanced Parameter Handling**
+
+### Subtask 4.1: Create Configuration Script
+
+```bash
+# Create sophisticated parameter handling
+nano entrypoint.sh
+```
+
+**Advanced parameter handling entrypoint.sh:**
+```bash
+#!/bin/bash
+
+echo "🚀 Advanced Container Control System"
+echo "=================================="
+
+# Check if any arguments were provided
+if [ $# -eq 0 ]; then
+    echo "❌ No arguments provided!"
+    echo "📖 Usage: container-name {start|stop|status|config} [options]"
+    exit 1
+fi
+
+# Process the first argument (command)
+COMMAND="$1"
+shift  # Remove first argument, leaving options
+
+case "$COMMAND" in
+    start)
+        echo "🟢 STARTING APPLICATION"
+        CONFIG="${1:-default}"
+        echo "   📝 Using configuration: $CONFIG"
+        echo "   🌍 Environment mode: ${ENV_MODE:-default}"
+        echo "   🕒 Start time: $(date)"
+        
+        # Simulate application startup
+        if [ "$CONFIG" = "production" ]; then
+            echo "   🏭 Production config loaded"
+            echo "   ✓ SSL certificates verified"
+            echo "   ✓ Database connections established"
+        elif [ "$CONFIG" = "development" ]; then
+            echo "   🛠️  Development config loaded"
+            echo "   ✓ Hot-reload enabled"
+            echo "   ✓ Debug logging active"
+        else
+            echo "   ⚙️  Default config loaded"
+        fi
+        
+        echo "   🎉 Application started successfully!"
+        ;;
+        
+    stop)
+        echo "🔴 STOPPING APPLICATION"
+        echo "   📝 Performing graceful shutdown..."
+        echo "   💾 Saving application state..."
+        echo "   🔒 Closing database connections..."
+        echo "   📊 Generating shutdown report..."
+        echo "   ✓ Application stopped successfully!"
+        ;;
+        
+    status)
+        echo "📊 APPLICATION STATUS"
+        echo "   🟢 Status: Running"
+        echo "   🕒 Uptime: $(uptime)"
+        echo "   💾 Memory: $(free -h | grep Mem)"
+        echo "   🌍 Environment: ${ENV_MODE:-default}"
+        echo "   📋 Config: ${1:-default}"
+        ;;
+        
+    config)
+        echo "⚙️  CONFIGURATION MANAGEMENT"
+        ACTION="${1:-show}"
+        case "$ACTION" in
+            show)
+                echo "   📋 Current Configuration:"
+                echo "   - ENV_MODE: ${ENV_MODE:-default}"
+                echo "   - LOG_LEVEL: ${LOG_LEVEL:-INFO}"
+                echo "   - DEBUG_MODE: ${DEBUG_MODE:-false}"
+                ;;
+            validate)
+                echo "   ✅ Configuration validation:"
+                echo "   - Environment variables: OK"
+                echo "   - File permissions: OK"
+                echo "   - Network connectivity: OK"
+                ;;
+            *)
+                echo "   📖 Config usage: config {show|validate}"
+                ;;
+        esac
+        ;;
+        
+    *)
+        echo "❌ Unknown command: $COMMAND"
+        echo ""
+        echo "📖 Available commands:"
+        echo "   🟢 start [config]     - Start the application"
+        echo "   🔴 stop              - Stop the application"
+        echo "   📊 status [config]   - Show application status"
+        echo "   ⚙️  config {show|validate} - Manage configuration"
+        echo ""
+        echo "💡 Examples:"
+        echo "   podman run container-name start production"
+        echo "   podman run container-name status"
+        echo "   podman run -e ENV_MODE=dev container-name config show"
+        exit 1
+        ;;
+esac
+
+echo "=================================="
+echo "✅ Command completed successfully!"
+```
+
+### Subtask 4.2: Test Command Patterns
+
+```bash
+# Rebuild with advanced parameter handling
+podman build -t entrypoint-demo .
+```
+
+```bash
+# Test various command patterns
+echo "=== Testing Advanced Parameter Handling ==="
+```
+
+```bash
+# Test 1: Start with production config
+echo ""
+echo "Test 1: Starting with production config"
+podman run -e ENV_MODE=production entrypoint-demo start production
+```
+
+```bash
+# Test 2: Start with development config
+echo ""
+echo "Test 2: Starting with development config"  
+podman run -e ENV_MODE=development entrypoint-demo start development
+```
+
+```bash
+# Test 3: Stop command
+echo ""
+echo "Test 3: Graceful stop"
+podman run entrypoint-demo stop
+```
+
+```bash
+# Test 4: Status check
+echo ""
+echo "Test 4: Status check"
+podman run entrypoint-demo status
+```
+
+```bash
+# Test 5: Configuration management
+echo ""
+echo "Test 5: Show configuration"
+podman run -e ENV_MODE=development -e LOG_LEVEL=DEBUG entrypoint-demo config show
+```
+
+```bash
+# Test 6: Configuration validation
+echo ""
+echo "Test 6: Validate configuration"
+podman run entrypoint-demo config validate
+```
+
+```bash
+# Test 7: Invalid command (error handling)
+echo ""
+echo "Test 7: Invalid command handling"
+podman run entrypoint-demo invalid-command
+```
+
+```bash
+# Test 8: No arguments (help message)
+echo ""
+echo "Test 8: No arguments provided"
+podman run entrypoint-demo
+```
+
+---
+
+## **Hands-on Learning & Verification**
+
+```bash
+# Let's create a comprehensive test suite
+echo "=== Comprehensive Test Suite ==="
+echo "Running all scenarios to verify our understanding..."
+```
+
+```bash
+# Environment mode testing
+echo ""
+echo "🧪 Environment Mode Testing:"
+for mode in development production testing; do
+    echo "  Testing $mode mode:"
+    podman run -e ENV_MODE=$mode entrypoint-demo start $mode
+    echo ""
+done
+```
+
+```bash
+# Command pattern testing
+echo "🧪 Command Pattern Testing:"
+COMMANDS=("start" "stop" "status" "config show")
+for cmd in "${COMMANDS[@]}"; do
+    echo "  Testing: $cmd"
+    podman run entrypoint-demo $cmd
+    echo ""
+done
+```
+
+---
+
+## **Troubleshooting Section**
+
+```bash
+# Create troubleshooting toolkit
+echo "=== Troubleshooting Toolkit ==="
+echo "Common issues and solutions:"
+```
+
+```bash
+# Check script permissions
+echo ""
+echo "1. Checking script permissions:"
+ls -la entrypoint.sh
+echo "✓ If not executable, run: chmod +x entrypoint.sh"
+```
+
+```bash
+# Test script syntax
+echo ""
+echo "2. Testing script syntax:"
+bash -n entrypoint.sh && echo "✓ Script syntax is valid" || echo "❌ Syntax errors found"
+```
+
+```bash
+# Verify container can access script
+echo ""
+echo "3. Verifying script in container:"
+podman run --entrypoint /bin/ls entrypoint-demo -la /entrypoint.sh
+```
+
+```bash
+# Test environment variable passing
+echo ""
+echo "4. Testing environment variable passing:"
+podman run -e TEST_VAR="Hello World" entrypoint-demo sh -c 'echo "TEST_VAR value: $TEST_VAR"'
+```
+
+```bash
+# Debug mode - run with interactive shell
+echo ""
+echo "5. For interactive debugging, run:"
+echo "   podman run -it --entrypoint /bin/bash entrypoint-demo"
+echo "   Then test commands manually inside the container"
+```
+
+---
+
+## **Understanding Check**
+
+```bash
+# Interactive understanding verification
+echo "=== Understanding Verification ==="
+```
+
+```bash
+echo ""
+echo "💡 Key Concepts Verification:"
+echo "1. ENTRYPOINT vs CMD relationship:"
+podman run entrypoint-demo config show
+echo "   ↳ ENTRYPOINT runs our script, CMD provides default arguments"
+echo ""
+
+echo "2. Environment variable integration:"
+podman run -e ENV_MODE=production -e LOG_LEVEL=ERROR entrypoint-demo config show
+echo "   ↳ Environment variables customize container behavior"
+echo ""
+
+echo "3. Parameter processing flexibility:"
+podman run entrypoint-demo start custom-config
+echo "   ↳ Scripts can process complex argument patterns"
+```
+
+---
+
+## **Real-world Application Demo**
+
+```bash
+# Demonstrate real-world usage patterns
+echo "=== Real-world Application Patterns ==="
+```
+
+```bash
+# Microservice startup pattern
+echo ""
+echo "🌐 Microservice Startup Pattern:"
+podman run -e ENV_MODE=production entrypoint-demo start microservice-config
+```
+
+```bash
+# Health check pattern
+echo ""
+echo "💓 Health Check Pattern:"
+podman run entrypoint-demo status health-check
+```
+
+```bash
+# Configuration validation in CI/CD
+echo ""
+echo "🔄 CI/CD Validation Pattern:"
+podman run -e ENV_MODE=testing entrypoint-demo config validate
+```
+
+---
+
+## **Performance and Optimization**
+
+```bash
+# Performance testing
+echo "=== Performance Testing ==="
+```
+
+```bash
+# Measure startup time
+echo ""
+echo "⏱️  Measuring startup performance:"
+time podman run entrypoint-demo start performance-test
+```
+
+```bash
+# Memory usage check
+echo ""
+echo "💾 Memory usage verification:"
+podman run entrypoint-demo status | grep -i memory
+```
+
+---
+
+## **Cleanup and Final Verification**
+
+```bash
+# Final demonstration
+echo "=== Final Demonstration ==="
+echo "🎉 Comprehensive container orchestration demo:"
+```
+
+```bash
+# Production deployment simulation
+echo ""
+echo "🏭 Simulating Production Deployment:"
+podman run -e ENV_MODE=production entrypoint-demo start production
+```
+
+```bash
+# Show what we've accomplished
+echo ""
+echo "🎓 Lab Accomplishments Summary:"
+echo "✓ Created parameterized ENTRYPOINT scripts"
+echo "✓ Implemented environment-specific logic"
+echo "✓ Built advanced parameter handling"
+echo "✓ Added comprehensive error handling"
+echo "✓ Created real-world usage patterns"
+```
+
+```bash
+# Cleanup
+echo ""
+echo "🧹 Cleaning up..."
+podman rmi entrypoint-demo
+```
+
+```bash
+# Final verification
+podman images | grep entrypoint-demo || echo "✓ Image cleaned up successfully!"
+```
+
+```bash
+# Workspace cleanup
+cd ..
+rm -rf entrypoint-lab
+echo "✓ Lab workspace cleaned up!"
+```
+
+---
+
+## **Quick Reference Card**
+
+```bash
+# Generate quick reference
+echo "=== Quick Reference Card ==="
+echo ""
+echo "🔧 ENTRYPOINT Script Patterns:"
+echo "  exec \"\$@\"           # Execute passed arguments"
+echo "  \${1:-default}        # Parameter with default value"
+echo "  case \"\$1\" in...     # Command pattern matching"
+echo ""
+echo "🌍 Environment Integration:"
+echo "  \$ENV_MODE            # Runtime environment detection"
+echo "  export VAR=value      # Set environment variables"
+echo "  -e VAR=value          # Pass env vars at runtime"
+echo ""
+echo "🚀 Container Command Patterns:"
+echo "  podman run img start prod    # Start with config"
+echo "  podman run -e MODE=dev img   # Set environment"
+echo "  podman run img config show   # Show configuration"
+echo ""
+echo "💡 Best Practices:"
+echo "  • Always use 'exec \$@' to properly handle signals"
+echo "  • Validate parameters before processing"
+echo "  • Provide helpful error messages"
+echo "  • Support multiple environment modes"
+echo "  • Include comprehensive logging"
+```
+
+---
+
+## **Next Steps & Advanced Topics**
+
+```bash
+echo "=== Next Learning Steps ==="
+echo "🎯 Advanced topics to explore:"
+echo "  • Signal handling in ENTRYPOINT scripts"
+echo "  • Multi-stage builds with parameterized scripts"
+echo "  • Integration with Kubernetes ConfigMaps"
+echo "  • Secret management in containers"
+echo "  • Health check integration"
+echo "  • Graceful shutdown handling"
+echo ""
+echo "🛠️  Practice exercises:"
+echo "  • Build a web service with environment detection"
+echo "  • Create a database initialization script"
+echo "  • Implement a backup/restore container"
+echo "  • Design a monitoring agent container"
+echo ""
+echo "📚 OpenShift Integration:"
+echo "  • DeploymentConfig environment variables"
+echo "  • ConfigMap and Secret mounting"
+echo "  • Pod lifecycle hooks"
+echo "  • Health and readiness probes"
+```
+
+---
+
+**🎉 Congratulations! You've mastered parameterized ENTRYPOINT scripts and are ready for advanced container orchestration!**
