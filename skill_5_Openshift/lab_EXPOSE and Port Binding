@@ -1,0 +1,741 @@
+# Lab 8: EXPOSE and Port Binding - Enhanced Edition
+
+## **Objectives**
+- Understand how to document and expose ports in container images
+- Learn to map container ports to host ports
+- Test network connectivity between containers and host systems
+- Troubleshoot common port binding issues
+
+## **Prerequisites**
+- Podman installed on XFCE desktop environment (version 3.0+ recommended)
+- Basic familiarity with Linux command line
+- Text editor (nano recommended for beginners)
+- Network connectivity
+- Internet access for downloading Python base image
+
+## **Lab Setup**
+
+### Step 1: Environment Verification
+```bash
+# Open XFCE terminal (Applications → Terminal Emulator)
+# Verify Podman installation and version
+podman --version
+```
+
+```bash
+# Check if we have network connectivity
+ping -c 2 google.com
+echo "✓ Network connectivity verified"
+```
+
+```bash
+# Verify Python is available (for local testing - optional)
+python3 --version 2>/dev/null && echo "✓ Python3 available for local testing" || echo "⚠️  Python3 not available locally (container will still work)"
+```
+
+```bash
+# Check available ports (optional - for learning)
+echo "📊 Current network connections (optional info):"
+ss -tulnp | head -10
+echo "💡 These are currently used ports on your system"
+```
+
+### Step 2: Lab Workspace Setup
+```bash
+# Create dedicated lab directory
+mkdir -p ~/portbinding-lab && cd ~/portbinding-lab
+```
+
+```bash
+# Confirm our workspace
+pwd
+echo "🚀 Port binding lab workspace created at: $(pwd)"
+```
+
+```bash
+# Create directory structure for organization
+mkdir -p src tests
+echo "✓ Organized project structure created"
+```
+
+---
+
+## **Task 1: Using EXPOSE in Containerfile**
+
+### Subtask 1.1: Create a Simple Web Application
+
+```bash
+# Create our Python Flask web application
+cat > app.py <<'EOF'
+from flask import Flask, jsonify
+import socket
+import os
+from datetime import datetime
+
+app = Flask(__name__)
+
+@app.route('/')
+def hello():
+    return f"""
+🚀 Hello from the exposed container port!
+
+📋 Container Information:
+   🌐 Hostname: {socket.gethostname()}
+   🕒 Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+   🐍 Python Version: {os.sys.version}
+   🌍 Environment: Container
+
+✅ Port binding is working successfully!
+"""
+
+@app.route('/health')
+def health():
+    return jsonify({
+        "status": "healthy",
+        "hostname": socket.gethostname(),
+        "timestamp": datetime.now().isoformat()
+    })
+
+@app.route('/info')
+def info():
+    return jsonify({
+        "application": "Flask Port Binding Demo",
+        "container_hostname": socket.gethostname(),
+        "listening_port": 8080,
+        "endpoints": ["/", "/health", "/info"]
+    })
+
+if __name__ == '__main__':
+    print("🚀 Starting Flask application...")
+    print("📡 Listening on 0.0.0.0:8080")
+    print("🔗 Available endpoints: /, /health, /info")
+    app.run(host='0.0.0.0', port=8080, debug=True)
+EOF
+```
+
+```bash
+# Create requirements file for Python dependencies
+echo "flask" > requirements.txt
+```
+
+```bash
+# Verify our files were created
+ls -la
+echo "✓ Application files created successfully"
+```
+
+```bash
+# Optional: Preview our application code
+echo "📋 Application code preview:"
+head -15 app.py
+echo "... (rest of the code)"
+```
+
+### Subtask 1.2: Create Containerfile with EXPOSE
+
+```bash
+# Create our Containerfile with proper EXPOSE instruction
+cat > Containerfile <<'EOF'
+# Use Python slim image for smaller size
+FROM python:3.9-slim
+
+# Set working directory
+WORKDIR /app
+
+# Copy application files
+COPY . .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Document which port this container listens on
+EXPOSE 8080
+
+# Set default command
+CMD ["python", "app.py"]
+EOF
+```
+
+```bash
+# Verify Containerfile content
+echo "📋 Containerfile content:"
+cat Containerfile
+echo ""
+echo "💡 Key Concept: EXPOSE documents ports but doesn't publish them"
+```
+
+```bash
+# Optional: Explain each Containerfile instruction
+echo "📚 Containerfile Explanation:"
+echo "  FROM python:3.9-slim  → Use lightweight Python base image"
+echo "  WORKDIR /app          → Set working directory inside container"
+echo "  COPY . .              → Copy all files from current directory"
+echo "  RUN pip install...    → Install Python dependencies"
+echo "  EXPOSE 8080           → Document that container listens on port 8080"
+echo "  CMD [\"python\", \"app.py\"] → Default command to run when container starts"
+```
+
+---
+
+## **Task 2: Run Container with Port Mappings**
+
+### Subtask 2.1: Build the Image
+
+```bash
+# Build our container image
+podman build -t exposed-app .
+```
+
+```bash
+# Verify the image was built successfully
+podman images | grep exposed-app
+echo "✓ Image built successfully!"
+```
+
+```bash
+# Optional: Inspect the image to see EXPOSE instruction
+echo "🔍 Inspecting image configuration (optional):"
+podman inspect exposed-app | grep -A 5 -B 5 "ExposedPorts"
+```
+
+```bash
+# Optional: Check image size and details
+echo "📊 Image details:"
+podman images exposed-app --format "table {{.Repository}} {{.Tag}} {{.Size}} {{.Created}}"
+```
+
+### Subtask 2.2: Run with Port Mapping
+
+```bash
+# Run container with port mapping (host:container)
+podman run -d -p 8080:8080 --name webapp exposed-app
+```
+
+```bash
+# Verify the container is running
+podman ps
+echo "✓ Container is running with port mapping"
+```
+
+```bash
+# Check detailed port mapping information
+echo "🔗 Port mapping details:"
+podman port webapp
+```
+
+```bash
+# Optional: Show container logs to see Flask startup
+echo "📋 Container startup logs (optional):"
+podman logs webapp
+```
+
+```bash
+# Optional: Inspect running container
+echo "🔍 Container runtime information (optional):"
+podman inspect webapp | grep -A 10 "NetworkSettings"
+```
+
+---
+
+## **Task 3: Test Connectivity from Host**
+
+### Subtask 3.1: Verify Port Mapping
+
+```bash
+# Check which process is listening on port 8080
+ss -tulnp | grep 8080
+echo "✓ Port 8080 is bound and listening"
+```
+
+```bash
+# Test our Flask application
+echo "🧪 Testing main endpoint:"
+curl http://localhost:8080
+```
+
+```bash
+# Test the health endpoint
+echo ""
+echo "🧪 Testing health endpoint:"
+curl http://localhost:8080/health
+```
+
+```bash
+# Test the info endpoint
+echo ""
+echo "🧪 Testing info endpoint:"
+curl http://localhost:8080/info
+```
+
+```bash
+# Optional: Test with different methods
+echo ""
+echo "🧪 Additional connectivity tests (optional):"
+echo "Testing with wget:"
+wget -qO- http://localhost:8080/health 2>/dev/null && echo "✓ wget test successful" || echo "⚠️ wget not available"
+```
+
+```bash
+# Optional: Check response headers
+echo ""
+echo "🔍 Response headers analysis (optional):"
+curl -I http://localhost:8080
+```
+
+### Subtask 3.2: Test with Different Port Mapping
+
+```bash
+# Stop the previous container
+podman stop webapp
+echo "✓ First container stopped"
+```
+
+```bash
+# Run with different host port (9090 → 8080)
+podman run -d -p 9090:8080 --name webapp2 exposed-app
+```
+
+```bash
+# Verify new container is running
+podman ps | grep webapp2
+echo "✓ Second container running on different host port"
+```
+
+```bash
+# Test the new port mapping
+echo "🧪 Testing new port mapping:"
+curl http://localhost:9090
+```
+
+```bash
+# Compare port mappings
+echo ""
+echo "📊 Port mapping comparison:"
+echo "Original mapping: host 8080 → container 8080 (stopped)"
+echo "New mapping: host 9090 → container 8080 (running)"
+podman port webapp2
+```
+
+```bash
+# Optional: Test both endpoints on new port
+echo ""
+echo "🧪 Testing all endpoints on new port (optional):"
+curl http://localhost:9090/health
+echo ""
+curl http://localhost:9090/info
+```
+
+---
+
+## **Task 4: Troubleshoot Port Conflicts**
+
+### Subtask 4.1: Simulate Port Conflict
+
+```bash
+# Try to bind to the already occupied port 9090
+echo "🎯 Attempting to create port conflict..."
+podman run -d -p 9090:8080 --name webapp3 exposed-app
+```
+
+```bash
+# The above command should fail - let's verify
+echo "📋 Expected result: Port conflict error"
+echo "✓ This error is expected and demonstrates port conflict handling"
+```
+
+### Subtask 4.2: Resolve Conflict
+
+```bash
+# Find what's using port 9090
+echo "🔍 Finding process using port 9090:"
+sudo lsof -i :9090 2>/dev/null || echo "Using alternative method:"
+ss -tulnp | grep 9090
+```
+
+```bash
+# Solution 1: Use a different host port
+echo ""
+echo "💡 Solution 1: Using different host port"
+podman run -d -p 8081:8080 --name webapp3 exposed-app
+```
+
+```bash
+# Verify the new container works
+podman ps | grep webapp3
+curl http://localhost:8081/health
+echo "✓ Port conflict resolved with different host port"
+```
+
+```bash
+# Solution 2: Let Podman choose a random available port
+echo ""
+echo "💡 Solution 2: Auto-assign available port"
+podman run -d -P --name webapp4 exposed-app
+```
+
+```bash
+# Check what port Podman assigned
+echo "🔍 Auto-assigned port mapping:"
+podman port webapp4
+```
+
+```bash
+# Test the auto-assigned port
+AUTO_PORT=$(podman port webapp4 8080 | cut -d: -f2)
+echo "🧪 Testing auto-assigned port $AUTO_PORT:"
+curl http://localhost:$AUTO_PORT/info
+```
+
+---
+
+## **Advanced Port Management**
+
+```bash
+# Show all current port mappings
+echo "=== Current Port Mappings Overview ==="
+echo "📊 All running containers with port mappings:"
+podman ps --format "table {{.Names}} {{.Ports}} {{.Status}}"
+```
+
+```bash
+# Optional: Test multiple simultaneous connections
+echo ""
+echo "🔄 Testing concurrent connections (optional):"
+for i in {1..3}; do
+    echo "Request $i:"
+    curl -s http://localhost:8081/info | grep hostname
+done
+```
+
+```bash
+# Optional: Network troubleshooting commands
+echo ""
+echo "🔧 Network troubleshooting toolkit (optional):"
+echo "1. Check all listening ports:"
+echo "   ss -tulnp | grep LISTEN"
+echo ""
+echo "2. Check specific port:"
+echo "   lsof -i :8081"
+echo ""
+echo "3. Test connectivity:"
+echo "   telnet localhost 8081"
+echo ""
+echo "4. Check container networking:"
+echo "   podman network ls"
+```
+
+---
+
+## **Hands-on Learning Verification**
+
+```bash
+# Comprehensive testing of all concepts
+echo "=== Comprehensive Learning Verification ==="
+```
+
+```bash
+# Test 1: Verify EXPOSE documentation
+echo ""
+echo "🧪 Test 1: EXPOSE instruction verification"
+podman inspect exposed-app | grep -A 3 "ExposedPorts"
+echo "✓ EXPOSE instruction properly documented port 8080"
+```
+
+```bash
+# Test 2: Port mapping functionality
+echo ""
+echo "🧪 Test 2: Port mapping verification"
+echo "Testing all active mappings:"
+for container in webapp2 webapp3 webapp4; do
+    if podman ps | grep -q $container; then
+        echo "Container $container:"
+        PORT=$(podman port $container 8080 | cut -d: -f2)
+        curl -s http://localhost:$PORT/health | grep status
+    fi
+done
+```
+
+```bash
+# Test 3: Conflict resolution
+echo ""
+echo "🧪 Test 3: Conflict resolution verification"
+echo "Active containers and their ports:"
+podman ps --format "{{.Names}}: {{.Ports}}"
+echo "✓ Multiple containers running on different ports without conflicts"
+```
+
+---
+
+## **Real-world Application Patterns**
+
+```bash
+# Demonstrate common deployment patterns
+echo "=== Real-world Deployment Patterns ==="
+```
+
+```bash
+# Pattern 1: Load balancer simulation
+echo ""
+echo "🌐 Pattern 1: Multiple app instances (load balancer simulation)"
+for port in 8082 8083 8084; do
+    podman run -d -p $port:8080 --name "app-instance-$port" exposed-app
+    echo "Started instance on port $port"
+done
+```
+
+```bash
+# Test all instances
+echo ""
+echo "🧪 Testing all instances:"
+for port in 8082 8083 8084; do
+    RESPONSE=$(curl -s http://localhost:$port/info | grep hostname)
+    echo "Port $port: $RESPONSE"
+done
+```
+
+```bash
+# Pattern 2: Service discovery simulation
+echo ""
+echo "🔍 Pattern 2: Service discovery"
+echo "Available services:"
+podman ps --filter "name=app-instance" --format "Service: {{.Names}} - http://localhost:{{.Ports}}"
+```
+
+---
+
+## **Performance and Monitoring**
+
+```bash
+# Optional performance testing
+echo "=== Performance Testing (Optional) ==="
+```
+
+```bash
+# Simple load test (optional)
+echo ""
+echo "⚡ Simple load test (optional - requires ab tool):"
+which ab >/dev/null 2>&1 && {
+    echo "Running 10 requests to test performance:"
+    ab -n 10 -c 2 http://localhost:8081/ 2>/dev/null | grep -E "(Requests per second|Time per request)"
+} || echo "Apache Bench (ab) not available - skipping load test"
+```
+
+```bash
+# Monitor container resources (optional)
+echo ""
+echo "📊 Container resource monitoring (optional):"
+podman stats --no-stream webapp2 2>/dev/null || echo "Stats not available in this environment"
+```
+
+---
+
+## **Troubleshooting Section**
+
+```bash
+# Comprehensive troubleshooting guide
+echo "=== Comprehensive Troubleshooting ==="
+```
+
+```bash
+# Check 1: Container health
+echo ""
+echo "🏥 Health Check 1: Container Status"
+podman ps -a --format "table {{.Names}} {{.Status}} {{.Ports}}"
+```
+
+```bash
+# Check 2: Port availability
+echo ""
+echo "🔍 Health Check 2: Port Availability"
+echo "Checking common ports:"
+for port in 8080 8081 9090; do
+    if ss -tuln | grep -q ":$port "; then
+        echo "Port $port: 🔴 In use"
+    else
+        echo "Port $port: 🟢 Available"
+    fi
+done
+```
+
+```bash
+# Check 3: Container logs for errors
+echo ""
+echo "📋 Health Check 3: Container Logs"
+echo "Recent logs from webapp2:"
+podman logs --tail 5 webapp2
+```
+
+```bash
+# Check 4: Network connectivity
+echo ""
+echo "🌐 Health Check 4: Network Connectivity"
+curl -s --connect-timeout 5 http://localhost:8081/health >/dev/null && {
+    echo "✅ Network connectivity: Working"
+} || {
+    echo "❌ Network connectivity: Issues detected"
+    echo "Troubleshooting steps:"
+    echo "1. Check if container is running: podman ps"
+    echo "2. Check port mapping: podman port webapp3"
+    echo "3. Check container logs: podman logs webapp3"
+}
+```
+
+---
+
+## **Final Verification and Understanding**
+
+```bash
+# Final comprehensive test
+echo "=== Final Lab Verification ==="
+```
+
+```bash
+# Show what we've accomplished
+echo ""
+echo "🎯 Lab Accomplishments:"
+echo "✓ Created Flask application with multiple endpoints"
+echo "✓ Built container image with EXPOSE instruction"
+echo "✓ Successfully mapped ports (host → container)"
+echo "✓ Tested connectivity from host to container"
+echo "✓ Handled port conflicts with multiple solutions"
+echo "✓ Demonstrated real-world deployment patterns"
+```
+
+```bash
+# List all our containers
+echo ""
+echo "📋 All Lab Containers:"
+podman ps --format "table {{.Names}} {{.Image}} {{.Ports}} {{.Status}}"
+```
+
+```bash
+# Final connectivity test
+echo ""
+echo "🧪 Final Connectivity Test:"
+echo "Testing primary service:"
+curl -s http://localhost:8081 | head -3
+```
+
+---
+
+## **Cleanup Operations**
+
+```bash
+# Comprehensive cleanup
+echo "=== Lab Cleanup ==="
+```
+
+```bash
+# Stop all lab containers
+echo "🛑 Stopping all lab containers..."
+podman stop $(podman ps -q) 2>/dev/null || echo "No running containers to stop"
+```
+
+```bash
+# Remove all lab containers
+echo "🗑️  Removing all lab containers..."
+podman rm $(podman ps -aq) 2>/dev/null || echo "No containers to remove"
+```
+
+```bash
+# Remove the image
+echo "🗑️  Removing lab image..."
+podman rmi exposed-app
+```
+
+```bash
+# Verify cleanup
+echo ""
+echo "✅ Cleanup verification:"
+podman ps -a | grep webapp || echo "✓ All lab containers removed"
+podman images | grep exposed-app || echo "✓ Lab image removed"
+```
+
+```bash
+# Clean up workspace
+cd ..
+rm -rf portbinding-lab
+echo "✓ Lab workspace cleaned up"
+```
+
+---
+
+## **Knowledge Summary & Quick Reference**
+
+```bash
+# Generate comprehensive summary
+echo "=== Knowledge Summary ==="
+echo ""
+echo "🔧 Key EXPOSE & Port Binding Concepts:"
+echo ""
+echo "📋 EXPOSE Instruction:"
+echo "  • Purpose: Documents which ports container listens on"
+echo "  • Effect: Metadata only - doesn't actually publish ports"
+echo "  • Syntax: EXPOSE 8080"
+echo "  • Best Practice: Always document exposed ports"
+echo ""
+echo "🔗 Port Mapping Options:"
+echo "  • Basic mapping: -p 8080:8080 (host:container)"
+echo "  • Different ports: -p 9090:8080"
+echo "  • Auto-assign: -P (uses EXPOSE ports with random host ports)"
+echo "  • Multiple ports: -p 80:8080 -p 443:8443"
+echo ""
+echo "🧪 Testing Commands:"
+echo "  • Check ports: ss -tulnp | grep PORT"
+echo "  • Test HTTP: curl http://localhost:PORT"
+echo "  • Find conflicts: lsof -i :PORT"
+echo "  • Container ports: podman port CONTAINER"
+echo ""
+echo "🚨 Troubleshooting:"
+echo "  • Port conflicts: Use different host port or -P"
+echo "  • Connection refused: Check container status and logs"
+echo "  • Permission denied: Check firewall and SELinux"
+echo "  • Can't bind port: Port already in use by another process"
+echo ""
+echo "💡 Best Practices:"
+echo "  • Always use EXPOSE to document ports"
+echo "  • Use non-privileged ports (>1024) when possible"
+echo "  • Test connectivity after deployment"
+echo "  • Use meaningful container names"
+echo "  • Monitor port usage to avoid conflicts"
+```
+
+---
+
+## **Next Steps & Advanced Topics**
+
+```bash
+echo "=== Next Learning Steps ==="
+echo ""
+echo "🎯 Advanced Container Networking Topics:"
+echo "  • Custom container networks"
+echo "  • Container-to-container communication"
+echo "  • Network policies and security"
+echo "  • Load balancing with multiple containers"
+echo "  • Service mesh integration"
+echo ""
+echo "🚀 Real-world Applications:"
+echo "  • Kubernetes Service and Ingress"
+echo "  • OpenShift Routes and Services"
+echo "  • Docker Compose networking"
+echo "  • Reverse proxy configuration"
+echo "  • SSL/TLS termination"
+echo ""
+echo "🛠️  Practice Exercises:"
+echo "  • Multi-tier application deployment"
+echo "  • Database container with persistent volumes"
+echo "  • Web application with Redis cache"
+echo "  • Monitoring stack (Prometheus + Grafana)"
+echo ""
+echo "📚 OpenShift Integration:"
+echo "  • Service objects and endpoints"
+echo "  • Route configuration and SSL"
+echo "  • NetworkPolicy for security"
+echo "  • Pod-to-pod communication"
+```
+
+---
+
+**🎉 Congratulations! You've mastered container port management and are ready for advanced networking topics!**
+
+**💡 Key Takeaway:** The EXPOSE instruction documents intent, but port mapping (-p) controls actual network access. Always test connectivity and handle port conflicts gracefully in production environments.
