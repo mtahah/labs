@@ -1,0 +1,1028 @@
+# 🐳 Enhanced Docker Networking Hands-On Lab
+## Interactive Learning Experience - XFCE Terminal Optimized
+
+===================================================================
+**🎯 Lab Objectives:**
+- Master Docker networking concepts and practical implementations
+- Create and manage custom Docker networks
+- Configure container communication patterns
+- Implement network isolation and security
+- Test and troubleshoot network connectivity
+- Apply production-ready networking patterns
+===================================================================
+
+## 📋 Prerequisites & Environment Setup
+
+### 🔧 System Requirements Verification
+
+**📌 Points to Remember:** Before starting any Docker networking lab, always verify your system has sufficient resources and proper Docker installation. Network operations can be resource-intensive and require proper permissions.
+
+```bash
+# ✅ Step 1: Verify Docker installation and version
+echo "🚀 Checking Docker installation..."
+docker --version
+docker-compose --version
+
+# Expected output should show Docker version 20.0+ and Docker Compose version 2.0+
+# If not installed, run: sudo apt update && sudo apt install docker.io docker-compose
+```
+
+```bash
+# ✅ Step 2: Check Docker service status
+echo "🔍 Verifying Docker service status..."
+sudo systemctl status docker
+
+# Expected output: Active (running) status
+# If not running: sudo systemctl start docker
+```
+
+```bash
+# ✅ Step 3: Verify user permissions
+echo "👤 Checking user Docker permissions..."
+groups $USER | grep docker
+
+# If 'docker' group not shown, add user to docker group:
+# sudo usermod -aG docker $USER
+# Then logout/login or restart system
+```
+
+```bash
+# ✅ Step 4: Test Docker functionality
+echo "🧪 Testing basic Docker functionality..."
+docker run --rm hello-world
+
+# Expected: "Hello from Docker!" message
+# This confirms Docker can pull images and run containers
+```
+
+### 💻 XFCE Terminal Setup
+
+```bash
+# ✅ Step 5: Optimize terminal for lab work
+echo "🖥️ Setting up optimal terminal environment..."
+
+# Open multiple terminal tabs (Ctrl+Shift+T for new tabs)
+# Recommended: 3-4 tabs for monitoring, testing, and main work
+
+# Set terminal to full screen for better visibility
+# Press F11 for fullscreen mode
+```
+
+### 📁 Workspace Organization
+
+```bash
+# ✅ Step 6: Create dedicated lab workspace
+echo "📂 Creating Docker networking lab workspace..."
+mkdir -p ~/docker-networking-lab
+cd ~/docker-networking-lab
+
+# Verify workspace creation
+pwd
+ls -la
+
+# Expected output: /home/[username]/docker-networking-lab directory
+```
+
+---
+
+## 🌐 Section 1: Docker Networking Fundamentals
+
+**📌 Points to Remember:** Docker networking operates on multiple levels - bridge, host, overlay, and custom networks. Understanding these concepts is crucial for container orchestration and microservices architecture.
+
+### 🔍 Network Discovery and Analysis
+
+```bash
+# ✅ Step 1: Explore existing Docker networks
+echo "🕵️ Discovering existing Docker networks..."
+docker network ls
+
+# Expected output: Shows default networks (bridge, host, none)
+# bridge: Default network for containers
+# host: Uses host's network stack directly  
+# none: Disables networking for containers
+```
+
+**💡 Understanding the Output:**
+- **NETWORK ID**: Unique identifier for each network
+- **NAME**: Human-readable network name
+- **DRIVER**: Network driver type (bridge, host, overlay, etc.)
+- **SCOPE**: Network scope (local, swarm, global)
+
+```bash
+# ✅ Step 2: Inspect default bridge network
+echo "🔬 Analyzing default bridge network..."
+docker network inspect bridge
+
+# This command reveals:
+# - Network configuration details
+# - IP address ranges (typically 172.17.0.0/16)
+# - Gateway settings
+# - Connected containers
+```
+
+**💡 Key Information to Note:**
+- **Subnet**: Default IP range for containers
+- **Gateway**: Router IP for container communication
+- **Containers**: Currently connected containers
+
+### 🧪 Basic Container Networking Test
+
+```bash
+# ✅ Step 3: Test default networking with simple containers
+echo "🧪 Testing basic container networking..."
+
+# Launch first test container
+docker run -d --name network-test-1 nginx:alpine
+echo "✅ Started network-test-1 container"
+
+# Launch second test container  
+docker run -d --name network-test-2 nginx:alpine
+echo "✅ Started network-test-2 container"
+
+# Verify containers are running
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+```
+
+```bash
+# ✅ Step 4: Inspect container IP addresses
+echo "🔍 Discovering container IP addresses..."
+
+# Get IP of first container
+CONTAINER1_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' network-test-1)
+echo "📍 network-test-1 IP: $CONTAINER1_IP"
+
+# Get IP of second container
+CONTAINER2_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' network-test-2)
+echo "📍 network-test-2 IP: $CONTAINER2_IP"
+```
+
+```bash
+# ✅ Step 5: Test inter-container connectivity
+echo "🔗 Testing container-to-container communication..."
+
+# Test ping from container 1 to container 2
+docker exec network-test-1 ping -c 3 $CONTAINER2_IP
+
+# Expected: Successful ping responses
+# This proves containers on default bridge can communicate via IP
+```
+
+**💡 What Just Happened:**
+- Containers automatically joined the default bridge network
+- Each received a unique IP address in the bridge subnet
+- They can communicate directly using IP addresses
+- No external port mapping was needed for internal communication
+
+### 🧹 Cleanup Default Test
+
+```bash
+# ✅ Step 6: Clean up test containers
+echo "🧹 Cleaning up basic networking test..."
+docker stop network-test-1 network-test-2
+docker rm network-test-1 network-test-2
+
+# Verify cleanup
+docker ps -a --filter "name=network-test"
+# Expected: No containers listed
+```
+
+---
+
+## 🏗️ Section 2: Custom Network Creation and Management
+
+**📌 Points to Remember:** Custom networks provide better isolation, automatic DNS resolution, and more control over container communication. Always use custom networks in production environments rather than the default bridge.
+
+### 🔨 Creating Custom Bridge Networks
+
+```bash
+# ✅ Step 1: Create first custom network
+echo "🌉 Creating custom bridge network..."
+docker network create \
+  --driver bridge \
+  --subnet 192.168.100.0/24 \
+  --gateway 192.168.100.1 \
+  custom-bridge-net
+
+# Verify network creation
+docker network ls | grep custom-bridge-net
+echo "✅ Custom bridge network created successfully"
+```
+
+**💡 Network Parameters Explained:**
+- **--driver bridge**: Uses bridge driver for single-host networking
+- **--subnet**: Defines IP address range for containers
+- **--gateway**: Sets gateway IP for the network
+
+```bash
+# ✅ Step 2: Inspect custom network details
+echo "🔬 Analyzing custom network configuration..."
+docker network inspect custom-bridge-net
+
+# Key details to observe:
+# - Subnet configuration matches our specification
+# - Gateway is set correctly
+# - No containers connected yet
+```
+
+```bash
+# ✅ Step 3: Create second custom network for isolation testing
+echo "🌉 Creating isolated network for comparison..."
+docker network create \
+  --driver bridge \
+  --subnet 192.168.200.0/24 \
+  --gateway 192.168.200.1 \
+  isolated-net
+
+echo "✅ Isolated network created"
+
+# List all networks to confirm
+docker network ls
+```
+
+### 🚀 Deploying Containers on Custom Networks
+
+```bash
+# ✅ Step 4: Launch containers on custom network
+echo "🚀 Deploying containers on custom-bridge-net..."
+
+# Create first container with custom name resolution
+docker run -d \
+  --name web-server-1 \
+  --network custom-bridge-net \
+  nginx:alpine
+
+# Create second container on same network
+docker run -d \
+  --name web-server-2 \
+  --network custom-bridge-net \
+  nginx:alpine
+
+echo "✅ Containers deployed on custom network"
+```
+
+```bash
+# ✅ Step 5: Test automatic DNS resolution
+echo "🔍 Testing automatic DNS resolution..."
+
+# Test hostname resolution (this is the magic of custom networks!)
+docker exec web-server-1 ping -c 3 web-server-2
+
+# Expected: Successful ping to container name (not just IP)
+# This demonstrates automatic DNS resolution in custom networks
+```
+
+**💡 Custom Network Advantages:**
+- **Automatic DNS**: Containers can reach each other by name
+- **Network Isolation**: Traffic is isolated from other networks
+- **Better Security**: More control over container communication
+- **Flexible IP Management**: Custom IP ranges and configurations
+
+### 🔗 Network Connectivity Testing
+
+```bash
+# ✅ Step 6: Create container on isolated network
+echo "🔒 Testing network isolation..."
+docker run -d \
+  --name isolated-container \
+  --network isolated-net \
+  nginx:alpine
+
+# Try to ping from custom-bridge-net to isolated-net (should fail)
+docker exec web-server-1 ping -c 3 isolated-container 2>/dev/null || echo "❌ Ping failed - networks are properly isolated!"
+```
+
+```bash
+# ✅ Step 7: Demonstrate multi-network connectivity
+echo "🔗 Connecting container to multiple networks..."
+
+# Connect isolated container to custom-bridge-net as well
+docker network connect custom-bridge-net isolated-container
+
+# Now test connectivity (should work!)
+docker exec web-server-1 ping -c 3 isolated-container
+echo "✅ Multi-network connectivity established"
+```
+
+**💡 Key Insight:** Containers can be connected to multiple networks simultaneously, enabling complex networking topologies and controlled access patterns.
+
+---
+
+## 🌐 Section 3: Advanced Networking Patterns
+
+**📌 Points to Remember:** Production applications require sophisticated networking patterns including service discovery, load balancing, and secure communication. These patterns are essential for microservices architectures.
+
+### 🏭 Multi-Container Application Setup
+
+```bash
+# ✅ Step 1: Create application network
+echo "🏭 Setting up multi-tier application network..."
+docker network create \
+  --driver bridge \
+  --subnet 172.20.0.0/16 \
+  --gateway 172.20.0.1 \
+  app-network
+
+echo "✅ Application network created"
+```
+
+```bash
+# ✅ Step 2: Deploy database tier
+echo "🗄️ Deploying database tier..."
+docker run -d \
+  --name app-database \
+  --network app-network \
+  -e MYSQL_ROOT_PASSWORD=rootpass123 \
+  -e MYSQL_DATABASE=appdb \
+  -e MYSQL_USER=appuser \
+  -e MYSQL_PASSWORD=apppass123 \
+  mysql:8.0
+
+echo "✅ Database container deployed"
+```
+
+```bash
+# ✅ Step 3: Wait for database initialization
+echo "⏳ Waiting for database to initialize..."
+sleep 30
+
+# Verify database is ready
+docker exec app-database mysqladmin ping -h localhost -u root -prootpass123
+echo "✅ Database is ready"
+```
+
+```bash
+# ✅ Step 4: Deploy web application tier
+echo "🌐 Deploying web application..."
+
+# Create simple web app that connects to database
+cat > ~/docker-networking-lab/app.py << 'EOF'
+from flask import Flask, jsonify
+import mysql.connector
+import os
+
+app = Flask(__name__)
+
+@app.route('/')
+def health_check():
+    return jsonify({
+        "status": "healthy",
+        "service": "web-app",
+        "database": "connected" if test_db_connection() else "disconnected"
+    })
+
+@app.route('/db-test')
+def db_test():
+    try:
+        connection = mysql.connector.connect(
+            host='app-database',
+            database='appdb',
+            user='appuser',
+            password='apppass123'
+        )
+        cursor = connection.cursor()
+        cursor.execute("SELECT 1")
+        result = cursor.fetchone()
+        connection.close()
+        return jsonify({"database_test": "success", "result": result[0]})
+    except Exception as e:
+        return jsonify({"database_test": "failed", "error": str(e)})
+
+def test_db_connection():
+    try:
+        connection = mysql.connector.connect(
+            host='app-database',
+            database='appdb',
+            user='appuser', 
+            password='apppass123'
+        )
+        connection.close()
+        return True
+    except:
+        return False
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
+EOF
+
+echo "✅ Web application code created"
+```
+
+```bash
+# ✅ Step 5: Create Dockerfile for web app
+cat > ~/docker-networking-lab/Dockerfile << 'EOF'
+FROM python:3.9-slim
+
+WORKDIR /app
+
+RUN pip install flask mysql-connector-python
+
+COPY app.py .
+
+EXPOSE 5000
+
+CMD ["python", "app.py"]
+EOF
+
+echo "✅ Dockerfile created"
+```
+
+```bash
+# ✅ Step 6: Build and deploy web application
+echo "🏗️ Building web application image..."
+cd ~/docker-networking-lab
+docker build -t web-app:v1 .
+
+# Deploy web application on same network as database
+docker run -d \
+  --name web-application \
+  --network app-network \
+  -p 8080:5000 \
+  web-app:v1
+
+echo "✅ Web application deployed"
+```
+
+### 🧪 Application Testing and Validation
+
+```bash
+# ✅ Step 7: Test application connectivity
+echo "🧪 Testing multi-tier application..."
+
+# Wait for web app to start
+sleep 10
+
+# Test health endpoint
+echo "🔍 Testing health check endpoint..."
+curl -s http://localhost:8080/ | python3 -m json.tool
+
+# Test database connectivity through web app
+echo "🔍 Testing database connectivity..."
+curl -s http://localhost:8080/db-test | python3 -m json.tool
+```
+
+**💡 What This Demonstrates:**
+- **Service Discovery**: Web app finds database using container name
+- **Network Isolation**: Database is not exposed to host, only accessible within network
+- **Port Mapping**: Web app is accessible from host on port 8080
+- **Multi-tier Architecture**: Separation of concerns between web and data tiers
+
+### 📊 Network Monitoring and Diagnostics
+
+```bash
+# ✅ Step 8: Monitor network activity
+echo "📊 Monitoring network activity..."
+
+# Show network statistics
+docker network inspect app-network
+
+# Show container network information
+echo "🔍 Container network details:"
+docker inspect web-application | grep -A 20 "NetworkSettings"
+```
+
+```bash
+# ✅ Step 9: Network troubleshooting tools
+echo "🔧 Network troubleshooting demonstration..."
+
+# Test internal connectivity from web container
+echo "Testing internal network connectivity:"
+docker exec web-application ping -c 3 app-database
+
+# Test DNS resolution
+echo "Testing DNS resolution:"
+docker exec web-application nslookup app-database
+
+# Show routing table
+echo "Container routing information:"
+docker exec web-application route -n
+```
+
+---
+
+## 🔒 Section 4: Network Security and Isolation
+
+**📌 Points to Remember:** Network security in Docker involves multiple layers - network isolation, port exposure control, and traffic filtering. Never expose unnecessary ports and always use principle of least privilege for network access.
+
+### 🛡️ Implementing Network Security
+
+```bash
+# ✅ Step 1: Create secure frontend network
+echo "🛡️ Creating secure network topology..."
+docker network create \
+  --driver bridge \
+  --subnet 10.10.1.0/24 \
+  --gateway 10.10.1.1 \
+  frontend-net
+
+# Create secure backend network
+docker network create \
+  --driver bridge \
+  --subnet 10.10.2.0/24 \
+  --gateway 10.10.2.1 \
+  backend-net
+
+echo "✅ Secure networks created"
+```
+
+```bash
+# ✅ Step 2: Deploy security-focused architecture
+echo "🏗️ Deploying secure multi-tier architecture..."
+
+# Backend database (no external access)
+docker run -d \
+  --name secure-database \
+  --network backend-net \
+  -e MYSQL_ROOT_PASSWORD=securepass123 \
+  -e MYSQL_DATABASE=securedb \
+  mysql:8.0
+
+# API server (bridge between frontend and backend)
+docker run -d \
+  --name api-server \
+  --network backend-net \
+  nginx:alpine
+
+# Connect API server to frontend network as well
+docker network connect frontend-net api-server
+
+# Frontend web server (only frontend network access)
+docker run -d \
+  --name frontend-web \
+  --network frontend-net \
+  -p 9090:80 \
+  nginx:alpine
+
+echo "✅ Secure architecture deployed"
+```
+
+### 🔍 Security Validation Tests
+
+```bash
+# ✅ Step 3: Test network isolation
+echo "🔍 Testing network isolation security..."
+
+# Test 1: Frontend cannot reach backend database directly (should fail)
+echo "Test 1: Frontend to Database (should fail):"
+docker exec frontend-web ping -c 2 secure-database 2>/dev/null || echo "✅ PASS: Frontend isolated from database"
+
+# Test 2: API server can reach both networks
+echo "Test 2: API server connectivity:"
+docker exec api-server ping -c 2 secure-database && echo "✅ API can reach database"
+docker exec api-server ping -c 2 frontend-web && echo "✅ API can reach frontend"
+
+# Test 3: Database is completely isolated
+echo "Test 3: Database isolation:"
+docker exec secure-database ping -c 2 frontend-web 2>/dev/null || echo "✅ PASS: Database isolated from frontend"
+```
+
+**💡 Security Benefits Achieved:**
+- **Network Segmentation**: Database isolated from direct frontend access
+- **Controlled Access**: API server acts as controlled gateway
+- **Minimal Exposure**: Only necessary ports exposed to host
+- **Defense in Depth**: Multiple layers of network isolation
+
+### 📋 Port Management and Exposure Control
+
+```bash
+# ✅ Step 4: Demonstrate port exposure patterns
+echo "🚪 Managing port exposure patterns..."
+
+# Show current port mappings
+echo "Current port mappings:"
+docker ps --format "table {{.Names}}\t{{.Ports}}"
+
+# Create container with specific port controls
+docker run -d \
+  --name port-demo \
+  --network frontend-net \
+  -p 127.0.0.1:8081:80 \
+  nginx:alpine
+
+echo "✅ Container with localhost-only port binding created"
+```
+
+**💡 Port Security Best Practices:**
+- Bind to specific interfaces (127.0.0.1 for localhost only)
+- Use non-standard ports when possible
+- Limit exposed ports to minimum required
+- Use reverse proxies for additional security layer
+
+---
+
+## 🐳 Section 5: Docker Compose Networking
+
+**📌 Points to Remember:** Docker Compose automatically creates networks and provides service discovery between containers. This is the preferred method for multi-container applications in development and testing environments.
+
+### 📝 Compose Network Configuration
+
+```bash
+# ✅ Step 1: Create Docker Compose configuration
+echo "📝 Creating Docker Compose multi-service application..."
+
+cat > ~/docker-networking-lab/docker-compose.yml << 'EOF'
+version: '3.8'
+
+services:
+  database:
+    image: mysql:8.0
+    container_name: compose-db
+    environment:
+      MYSQL_ROOT_PASSWORD: composepass123
+      MYSQL_DATABASE: composedb
+      MYSQL_USER: composeuser
+      MYSQL_PASSWORD: userpass123
+    networks:
+      - backend-network
+    volumes:
+      - db-data:/var/lib/mysql
+
+  api:
+    image: nginx:alpine
+    container_name: compose-api
+    ports:
+      - "8082:80"
+    networks:
+      - backend-network
+      - frontend-network
+    depends_on:
+      - database
+
+  web:
+    image: nginx:alpine  
+    container_name: compose-web
+    ports:
+      - "8083:80"
+    networks:
+      - frontend-network
+    depends_on:
+      - api
+
+networks:
+  frontend-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.1.0/24
+          gateway: 172.30.1.1
+  backend-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.2.0/24
+          gateway: 172.30.2.1
+
+volumes:
+  db-data:
+EOF
+
+echo "✅ Docker Compose configuration created"
+```
+
+### 🚀 Compose Deployment and Testing
+
+```bash
+# ✅ Step 2: Deploy with Docker Compose
+echo "🚀 Deploying multi-service application..."
+cd ~/docker-networking-lab
+
+# Start all services
+docker-compose up -d
+
+# Verify deployment
+docker-compose ps
+
+echo "✅ All services deployed successfully"
+```
+
+```bash
+# ✅ Step 3: Test Compose networking
+echo "🧪 Testing Docker Compose networking..."
+
+# Test service discovery within Compose
+docker exec compose-api ping -c 3 database
+docker exec compose-web ping -c 3 api
+
+# Show Compose networks
+docker network ls | grep docker-networking-lab
+
+echo "✅ Compose networking validated"
+```
+
+**💡 Compose Networking Features:**
+- **Automatic Networks**: Compose creates networks automatically
+- **Service Discovery**: Services can reach each other by service name
+- **Network Isolation**: Each compose project gets its own network
+- **Dependency Management**: `depends_on` ensures proper startup order
+
+### 🔧 Advanced Compose Networking
+
+```bash
+# ✅ Step 4: Create advanced Compose configuration
+echo "🔧 Creating advanced networking configuration..."
+
+cat > ~/docker-networking-lab/docker-compose-advanced.yml << 'EOF'
+version: '3.8'
+
+services:
+  load-balancer:
+    image: nginx:alpine
+    container_name: load-balancer
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    networks:
+      public-network:
+        ipv4_address: 172.40.1.10
+    depends_on:
+      - web1
+      - web2
+
+  web1:
+    image: nginx:alpine
+    container_name: web-server-1
+    networks:
+      private-network:
+        ipv4_address: 172.40.2.11
+      public-network:
+
+  web2:
+    image: nginx:alpine
+    container_name: web-server-2
+    networks:
+      private-network:
+        ipv4_address: 172.40.2.12
+      public-network:
+
+  database-primary:
+    image: mysql:8.0
+    container_name: db-primary
+    environment:
+      MYSQL_ROOT_PASSWORD: advancedpass123
+      MYSQL_DATABASE: advanceddb
+    networks:
+      private-network:
+        ipv4_address: 172.40.2.20
+
+networks:
+  public-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.40.1.0/24
+          gateway: 172.40.1.1
+  private-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.40.2.0/24
+          gateway: 172.40.2.1
+
+EOF
+
+echo "✅ Advanced Compose configuration created"
+```
+
+```bash
+# ✅ Step 5: Create load balancer configuration
+cat > ~/docker-networking-lab/nginx.conf << 'EOF'
+events {
+    worker_connections 1024;
+}
+
+http {
+    upstream backend {
+        server web-server-1:80;
+        server web-server-2:80;
+    }
+    
+    server {
+        listen 80;
+        location / {
+            proxy_pass http://backend;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+    }
+}
+EOF
+
+echo "✅ Load balancer configuration created"
+```
+
+---
+
+## 🔍 Section 6: Network Troubleshooting and Monitoring
+
+**📌 Points to Remember:** Effective troubleshooting requires understanding network layers, container networking internals, and Docker's networking implementation. Always start with basic connectivity tests and work your way up the networking stack.
+
+### 🛠️ Essential Troubleshooting Tools
+
+```bash
+# ✅ Step 1: Install network troubleshooting tools
+echo "🛠️ Setting up troubleshooting toolkit..."
+
+# Create troubleshooting container with network tools
+docker run -d \
+  --name network-toolkit \
+  --network app-network \
+  nicolaka/netshoot:latest \
+  sleep 3600
+
+echo "✅ Network troubleshooting container deployed"
+```
+
+```bash
+# ✅ Step 2: Basic connectivity diagnostics
+echo "🔍 Running basic connectivity diagnostics..."
+
+# Test DNS resolution
+echo "DNS Resolution Test:"
+docker exec network-toolkit nslookup app-database
+
+# Test network connectivity  
+echo "Network Connectivity Test:"
+docker exec network-toolkit ping -c 3 app-database
+
+# Test port connectivity
+echo "Port Connectivity Test:"
+docker exec network-toolkit telnet app-database 3306
+
+# Show routing table
+echo "Routing Information:"
+docker exec network-toolkit route -n
+```
+
+### 📊 Network Performance Testing
+
+```bash
+# ✅ Step 3: Network performance testing
+echo "📊 Testing network performance..."
+
+# Test network bandwidth between containers
+echo "Starting iperf3 server in database container..."
+docker exec -d app-database iperf3 -s
+
+# Wait for server to start
+sleep 2
+
+# Test bandwidth from toolkit container
+echo "Testing network bandwidth:"
+docker exec network-toolkit iperf3 -c app-database -t 10
+
+echo "✅ Network performance test completed"
+```
+
+### 🔬 Advanced Network Analysis
+
+```bash
+# ✅ Step 4: Advanced network diagnostics
+echo "🔬 Advanced network analysis..."
+
+# Show network interfaces
+echo "Network Interfaces:"
+docker exec network-toolkit ip addr show
+
+# Show network statistics
+echo "Network Statistics:"
+docker exec network-toolkit ss -tuln
+
+# Show ARP table
+echo "ARP Table:"
+docker exec network-toolkit arp -a
+
+# Trace network path
+echo "Network Path Tracing:"
+docker exec network-toolkit traceroute app-database
+```
+
+**💡 Troubleshooting Checklist:**
+1. **Container Status**: Verify containers are running
+2. **Network Assignment**: Check container network membership  
+3. **DNS Resolution**: Test service name resolution
+4. **Connectivity**: Test ping and port connectivity
+5. **Routing**: Verify routing table configuration
+6. **Performance**: Test bandwidth and latency
+
+### 🚨 Common Issues and Solutions
+
+```bash
+# ✅ Step 5: Demonstrate common issues and fixes
+echo "🚨 Common networking issues and solutions..."
+
+# Issue 1: Container cannot resolve service names
+echo "Issue 1: DNS Resolution Problems"
+echo "Symptoms: Container cannot ping other containers by name"
+echo "Solution: Verify containers are on same custom network"
+
+# Create example of the problem
+docker run -d --name dns-problem-container nginx:alpine
+# This container is on default bridge - no automatic DNS
+
+# Show the problem
+docker exec dns-problem-container ping -c 1 app-database 2>/dev/null || echo "❌ DNS resolution failed (expected on default bridge)"
+
+# Fix: Connect to proper network
+docker network connect app-network dns-problem-container
+docker exec dns-problem-container ping -c 1 app-database && echo "✅ DNS resolution fixed"
+
+echo ""
+echo "Issue 2: Port Already in Use"
+echo "Symptoms: Cannot bind to host port"
+echo "Solution: Use different port or stop conflicting service"
+
+# Clean up example
+docker network disconnect app-network dns-problem-container
+docker stop dns-problem-container
+docker rm dns-problem-container
+```
+
+---
+
+## 🎯 Section 7: Production-Ready Patterns
+
+**📌 Points to Remember:** Production environments require robust networking patterns including health checks, service discovery, load balancing, and security measures. Always implement monitoring and logging for network operations.
+
+### 🏭 Production Network Architecture
+
+```bash
+# ✅ Step 1: Create production-style network setup
+echo "🏭 Implementing production network architecture..."
+
+# Create networks with specific purposes
+docker network create \
+  --driver bridge \
+  --subnet 10.0.1.0/24 \
+  --gateway 10.0.1.1 \
+  --label env=production \
+  --label tier=frontend \
+  prod-frontend
+
+docker network create \
+  --driver bridge \
+  --subnet 10.0.2.0/24 \
+  --gateway 10.0.2.1 \
+  --label env=production \
+  --label tier=backend \
+  prod-backend
+
+docker network create \
+  --driver bridge \
+  --subnet 10.0.3.0/24 \
+  --gateway 10.0.3.1 \
+  --label env=production \
+  --label tier=database \
+  prod-database
+
+echo "✅ Production networks created with proper labeling"
+```
+
+```bash
+# ✅ Step 2: Deploy production-ready services
+echo "🚀 Deploying production-ready services..."
+
+# Database with health checks and resource limits
+docker run -d \
+  --name prod-database \
+  --network prod-database \
+  --restart unless-stopped \
+  --memory 512m \
+  --cpus 0.5 \
+  --health-cmd="mysqladmin ping -h localhost -u root -p\$MYSQL_ROOT_PASSWORD" \
+  --health-interval=30s \
+  --health-timeout=5s \
+  --health-retries=3 \
+  -e MYSQL_ROOT_PASSWORD=prodpass123 \
+  -e MYSQL_DATABASE=proddb \
+  mysql:8.0
+
+# API service with health checks
+docker run -d \
+  --name prod-api \
+  --network prod-backend \
+  --restart unless-stopped \
+  --memory 256m \
+  --cpus 0.3 \
+  --health-cmd="curl -f http://localhost:80/ || exit 1" \
+  --health-interval=30s \
+  --health-timeout=5s \
+  --health-retries=3 \
+  nginx:alpine
+
+# Connect API to database network
+docker network connect prod-database prod-api
+
+# Frontend service
+docker run -d \
+  --name prod-frontend \
+  --network prod-frontend \
+  --restart unless-stopped \
+  --memory 128m \
+  --cpus 0.2 \
+  -p 8080:80 \
+  nginx:alpine
+
+# Connect frontend to backend network for API access
+docker network connect prod-backend prod-frontend
+
+echo "✅ Production services deployed with health checks and resource limits"
