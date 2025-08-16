@@ -1,0 +1,1962 @@
+# 🐳 Enhanced Lab 6: Writing a Simple Dockerfile - Interactive Learning Experience
+
+## 📋 Learning Objectives
+By the end of this lab, you will be able to:
+
+✅ **Understand** the purpose and structure of a Dockerfile  
+✅ **Create** a comprehensive Dockerfile for a Python application  
+✅ **Build** custom Docker images using the `docker build` command  
+✅ **Run** containers from custom-built images with proper configuration  
+✅ **Implement** environment variables and best practices in Dockerfiles  
+✅ **Modify** and rebuild Docker images with updated configurations  
+✅ **Apply** production-ready practices for writing efficient Dockerfiles  
+✅ **Troubleshoot** common Docker build and runtime issues  
+
+---
+
+## 🔧 Prerequisites Verification
+
+Before starting this lab, let's verify your environment is ready:
+
+### System Requirements Check
+```bash
+# Check Docker installation and version
+docker --version
+echo "✅ Docker version verified"
+
+# Verify Docker daemon is running
+docker info | head -5
+echo "✅ Docker daemon is active"
+
+# Check available disk space (need at least 2GB)
+df -h /var/lib/docker
+echo "✅ Disk space verified"
+
+# Verify nano editor is available
+which nano
+echo "✅ Nano editor available"
+```
+
+**Expected Output:**
+```
+Docker version 24.0.x, build xxxxx
+✅ Docker version verified
+Containers: 0
+ Running: 0
+ Paused: 0
+ Stopped: 0
+Images: x
+✅ Docker daemon is active
+/dev/sda1       20G  8.5G   11G  45% /var/lib/docker
+✅ Disk space verified
+/usr/bin/nano
+✅ Nano editor available
+```
+
+### 📌 Points to Remember
+**Critical Concept: Dockerfile Fundamentals**
+- A Dockerfile is a text file containing instructions to build a Docker image
+- Each instruction creates a new layer in the image
+- Order matters - frequently changing instructions should come later
+- Best practices improve security, performance, and maintainability
+
+---
+
+## 🚀 Environment Setup and Workspace Organization
+
+### Create Organized Project Structure
+```bash
+# Create main project directory
+mkdir -p ~/docker-python-app
+echo "✅ Created main project directory"
+
+# Navigate to project directory
+cd ~/docker-python-app
+echo "🚀 Current location: $(pwd)"
+
+# Create application subdirectory
+mkdir -p app
+echo "✅ Created app subdirectory"
+
+# Verify directory structure
+ls -la
+echo "✅ Directory structure verified"
+```
+
+**Expected Output:**
+```
+✅ Created main project directory
+🚀 Current location: /home/user/docker-python-app
+✅ Created app subdirectory
+total 12
+drwxr-xr-x 3 user user 4096 Aug 16 10:30 .
+drwxr-xr-x 5 user user 4096 Aug 16 10:30 ..
+drwxr-xr-x 2 user user 4096 Aug 16 10:30 app
+✅ Directory structure verified
+```
+
+---
+
+## 📝 Task 1: Create a Simple Dockerfile for a Python App
+
+### 🎯 Subtask 1.1: Create the Python Application
+
+#### Step 1: Navigate to App Directory
+```bash
+cd ~/docker-python-app/app
+echo "🚀 Current location: $(pwd)"
+```
+
+#### Step 2: Create Main Application File
+```bash
+# Create the main Python application
+nano app.py
+```
+
+**💡 Nano Editor Instructions:**
+- Copy and paste the code below
+- Save: `Ctrl+X`
+- Confirm: `Y`
+- Accept filename: `Enter`
+
+**Complete Python Application Code:**
+```python
+#!/usr/bin/env python3
+
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import json
+import os
+from datetime import datetime
+
+class SimpleHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        # Set response headers
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        
+        # Collect environment information
+        response_data = {
+            "message": "Hello from Dockerized Python App! 🐳",
+            "status": "success",
+            "timestamp": datetime.now().isoformat(),
+            "container_info": {
+                "hostname": os.environ.get('HOSTNAME', 'unknown'),
+                "python_version": "3.11",
+                "port": os.environ.get('PORT', '8080'),
+                "working_directory": os.getcwd()
+            },
+            "environment": {
+                "app_name": os.environ.get('APP_NAME', 'Docker Python App'),
+                "app_version": os.environ.get('APP_VERSION', '1.0.0'),
+                "debug_mode": os.environ.get('DEBUG', 'false').lower() == 'true'
+            }
+        }
+        
+        # Send JSON response
+        self.wfile.write(json.dumps(response_data, indent=2).encode())
+    
+    def log_message(self, format, *args):
+        # Custom log format
+        print(f"[{datetime.now().isoformat()}] {format % args}")
+
+def run_server():
+    # Get configuration from environment
+    port = int(os.environ.get('PORT', 8080))
+    app_name = os.environ.get('APP_NAME', 'Docker Python App')
+    
+    # Create and configure server
+    server = HTTPServer(('0.0.0.0', port), SimpleHandler)
+    
+    print("=" * 50)
+    print(f"🚀 Starting {app_name}")
+    print(f"📡 Port: {port}")
+    print(f"🌍 Environment: {os.environ.get('ENVIRONMENT', 'development')}")
+    print(f"🐛 Debug: {os.environ.get('DEBUG', 'false')}")
+    print(f"🔗 Access: http://localhost:{port}")
+    print("=" * 50)
+    print("Press Ctrl+C to stop the server")
+    
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\n🛑 Server stopped by user")
+        server.server_close()
+
+if __name__ == '__main__':
+    run_server()
+```
+
+#### Step 3: Verify File Creation
+```bash
+# Check file was created successfully
+ls -la app.py
+echo "✅ app.py created successfully"
+
+# Display first few lines to verify content
+head -10 app.py
+echo "✅ File content verified"
+```
+
+**Expected Output:**
+```
+-rw-r--r-- 1 user user 2156 Aug 16 10:35 app.py
+✅ app.py created successfully
+#!/usr/bin/env python3
+
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import json
+import os
+from datetime import datetime
+
+class SimpleHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+✅ File content verified
+```
+
+### 🎯 Subtask 1.2: Create Requirements File
+
+#### Step 1: Create requirements.txt
+```bash
+# Create requirements file
+nano requirements.txt
+```
+
+**Requirements.txt Content:**
+```txt
+# Python Web Server Requirements
+# No external dependencies needed for basic HTTP server
+
+# Optional: Add these for enhanced functionality
+# requests>=2.31.0
+# python-dateutil>=2.8.0
+
+# Development dependencies (optional)
+# pytest>=7.0.0
+# black>=23.0.0
+# flake8>=5.0.0
+```
+
+#### Step 2: Verify Requirements File
+```bash
+# Check requirements file
+ls -la requirements.txt
+cat requirements.txt
+echo "✅ Requirements file created"
+```
+
+### 🎯 Subtask 1.3: Test Application Locally (Optional)
+
+**💡 Local Testing Before Containerization:**
+```bash
+# Make application executable
+chmod +x app.py
+echo "✅ Made app.py executable"
+
+# Test Python application locally (optional)
+echo "🧪 Testing application locally..."
+echo "⚠️  This will start the server - press Ctrl+C to stop"
+# python3 app.py &
+# sleep 2
+# curl http://localhost:8080
+# kill %1
+echo "✅ Local testing completed (skipped for automation)"
+```
+
+### 🎯 Subtask 1.4: Create the Dockerfile
+
+#### Step 1: Navigate to Project Root
+```bash
+cd ~/docker-python-app
+echo "🚀 Current location: $(pwd)"
+```
+
+#### Step 2: Create Comprehensive Dockerfile
+```bash
+# Create the Dockerfile
+nano Dockerfile
+```
+
+**Complete Dockerfile Content:**
+```dockerfile
+# Use official Python runtime as base image
+FROM python:3.11-slim
+
+# Set metadata for the image (best practice)
+LABEL maintainer="student@alnafi.com" \
+      description="Simple Python web application for Docker learning" \
+      version="1.0" \
+      created="2024" \
+      vendor="Al Nafi Learning"
+
+# Set environment variables for Python optimization
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONHASHSEED=random \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Create app directory and set as working directory
+WORKDIR /usr/src/app
+
+# Copy requirements file first (Docker layer caching optimization)
+COPY app/requirements.txt ./
+
+# Install Python dependencies (even if empty, for best practices)
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY app/ .
+
+# Make Python script executable
+RUN chmod +x app.py
+
+# Create non-root user for security
+RUN groupadd -r appuser && \
+    useradd -r -g appuser -s /bin/bash appuser && \
+    chown -R appuser:appuser /usr/src/app
+
+# Switch to non-root user
+USER appuser
+
+# Expose the port the app runs on
+EXPOSE 8080
+
+# Add health check (production best practice)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8080')" || exit 1
+
+# Define the command to run the application
+CMD ["python3", "app.py"]
+```
+
+#### Step 3: Verify Dockerfile Creation
+```bash
+# Check Dockerfile was created
+ls -la Dockerfile
+echo "✅ Dockerfile created"
+
+# Display Dockerfile content for verification
+cat Dockerfile
+echo "✅ Dockerfile content verified"
+```
+
+### 🎯 Subtask 1.5: Project Structure Verification
+
+#### Complete Project Structure Check
+```bash
+# Comprehensive structure verification
+echo "📁 Complete Project Structure:"
+echo "================================"
+
+# Show tree structure (if available)
+if command -v tree &> /dev/null; then
+    tree ~/docker-python-app
+else
+    # Alternative structure display
+    find ~/docker-python-app -type f -exec ls -la {} \; | sort
+fi
+
+echo "================================"
+
+# Verify all required files exist
+echo "📋 File Verification Checklist:"
+files=("Dockerfile" "app/app.py" "app/requirements.txt")
+for file in "${files[@]}"; do
+    if [[ -f "$file" ]]; then
+        echo "✅ $file - exists"
+        wc -l "$file" | awk '{print "   📊 Lines:", $1}'
+    else
+        echo "❌ $file - missing"
+    fi
+done
+```
+
+**Expected Project Structure:**
+```
+docker-python-app/
+├── Dockerfile
+└── app/
+    ├── app.py
+    └── requirements.txt
+```
+
+---
+
+## 🔨 Task 2: Build the Docker Image
+
+### 📌 Points to Remember
+**Docker Build Process:**
+- Each instruction creates a new layer
+- Layers are cached for faster subsequent builds
+- Build context includes all files in the directory
+- Tags help identify and version images
+
+### 🎯 Subtask 2.1: Initial Image Build
+
+#### Step 1: Ensure Correct Directory
+```bash
+cd ~/docker-python-app
+echo "🚀 Building from: $(pwd)"
+```
+
+#### Step 2: Build the Docker Image
+```bash
+# Build Docker image with comprehensive logging
+echo "🔨 Starting Docker build process..."
+echo "This may take a few minutes for the first build..."
+
+docker build -t myimage . 2>&1 | tee build.log
+
+echo "✅ Build completed! Check build.log for details."
+```
+
+**🔍 Understanding the Build Output:**
+The build process shows each step:
+- `Step 1/12 : FROM python:3.11-slim` - Base image download
+- `Step 2/12 : LABEL maintainer=...` - Metadata addition
+- `Step 3/12 : ENV PYTHONDONTWRITEBYTECODE=1` - Environment setup
+- And so on...
+
+#### Step 3: Verify Build Success
+```bash
+# Check if build was successful
+if docker images myimage &> /dev/null; then
+    echo "✅ Image built successfully!"
+    docker images myimage
+else
+    echo "❌ Build failed! Check build.log for errors."
+    tail -20 build.log
+fi
+```
+
+### 🎯 Subtask 2.2: Image Inspection and Analysis
+
+#### Step 1: Examine Image Details
+```bash
+# Get detailed image information
+echo "🔍 Image Inspection Results:"
+echo "================================"
+
+docker inspect myimage | jq '.[0] | {
+    Id: .Id[0:12],
+    Created: .Created,
+    Size: .Size,
+    Architecture: .Architecture,
+    Os: .Os,
+    Config: {
+        Env: .Config.Env,
+        ExposedPorts: .Config.ExposedPorts,
+        User: .Config.User,
+        WorkingDir: .Config.WorkingDir,
+        Cmd: .Config.Cmd
+    }
+}'
+```
+
+**If jq is not available, use:**
+```bash
+# Alternative inspection method
+docker inspect myimage --format='{{.Id}}' | cut -c1-12
+docker inspect myimage --format='Size: {{.Size}} bytes'
+docker inspect myimage --format='Created: {{.Created}}'
+echo "✅ Image inspection completed"
+```
+
+#### Step 2: Analyze Image Layers
+```bash
+# View image history and layers
+echo "📋 Image Layer Analysis:"
+docker history myimage --format "table {{.CreatedBy}}\t{{.Size}}"
+
+echo ""
+echo "📊 Image Size Breakdown:"
+docker images myimage --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"
+```
+
+#### Step 3: Compare with Base Image
+```bash
+# Compare with base image size
+echo "⚖️  Size Comparison:"
+echo "Base image (python:3.11-slim):"
+docker images python:3.11-slim --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"
+echo ""
+echo "Our custom image (myimage):"
+docker images myimage --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"
+```
+
+### 🎯 Subtask 2.3: Build Verification Tests
+
+#### Step 1: Test Image Metadata
+```bash
+# Verify image labels
+echo "🏷️  Image Labels Verification:"
+docker inspect myimage --format='{{range $k, $v := .Config.Labels}}{{$k}}: {{$v}}{{"\n"}}{{end}}'
+```
+
+#### Step 2: Verify Exposed Ports
+```bash
+# Check exposed ports
+echo "🚪 Exposed Ports:"
+docker inspect myimage --format='{{.Config.ExposedPorts}}'
+```
+
+#### Step 3: Verify User Configuration
+```bash
+# Check user configuration
+echo "👤 User Configuration:"
+docker inspect myimage --format='{{.Config.User}}'
+```
+
+---
+
+## 🏃‍♂️ Task 3: Run Container from Custom Image
+
+### 🎯 Subtask 3.1: Container Deployment
+
+#### Step 1: Run Container with Full Configuration
+```bash
+# Run container with comprehensive configuration
+echo "🚀 Starting container deployment..."
+
+docker run -d \
+  --name my-python-app \
+  -p 8080:8080 \
+  --restart unless-stopped \
+  --health-interval=30s \
+  myimage
+
+echo "✅ Container deployment initiated"
+```
+
+**🔍 Command Breakdown:**
+- `-d` - Run in detached mode (background)
+- `--name my-python-app` - Assign container name
+- `-p 8080:8080` - Map host port 8080 to container port 8080
+- `--restart unless-stopped` - Auto-restart policy
+- `--health-interval=30s` - Health check frequency
+
+#### Step 2: Verify Container Status
+```bash
+# Comprehensive container status check
+echo "📊 Container Status Verification:"
+echo "================================"
+
+# Check if container is running
+docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"
+
+# Wait for container to fully start
+echo "⏳ Waiting for container to fully initialize..."
+sleep 5
+
+# Check container health
+docker inspect my-python-app --format='{{.State.Health.Status}}'
+```
+
+### 🎯 Subtask 3.2: Application Testing and Validation
+
+#### Step 1: Basic Connectivity Test
+```bash
+# Test application connectivity
+echo "🧪 Application Connectivity Tests:"
+echo "================================"
+
+# Wait for application to be ready
+echo "⏳ Waiting for application startup..."
+sleep 3
+
+# Test with curl
+if curl -s http://localhost:8080 > /dev/null; then
+    echo "✅ Application is responding"
+else
+    echo "❌ Application not responding - checking logs..."
+    docker logs my-python-app
+fi
+```
+
+#### Step 2: Detailed Application Response Test
+```bash
+# Get full application response
+echo "📡 Full Application Response:"
+echo "================================"
+
+curl -s http://localhost:8080 | python3 -m json.tool
+
+echo ""
+echo "✅ Application response test completed"
+```
+
+**Expected JSON Response:**
+```json
+{
+  "message": "Hello from Dockerized Python App! 🐳",
+  "status": "success",
+  "timestamp": "2024-08-16T10:45:30.123456",
+  "container_info": {
+    "hostname": "container-id",
+    "python_version": "3.11",
+    "port": "8080",
+    "working_directory": "/usr/src/app"
+  },
+  "environment": {
+    "app_name": "Docker Python App",
+    "app_version": "1.0.0",
+    "debug_mode": false
+  }
+}
+```
+
+#### Step 3: Performance and Resource Monitoring
+```bash
+# Monitor container resource usage
+echo "📊 Container Resource Monitoring:"
+echo "================================"
+
+# Real-time stats (single snapshot)
+docker stats my-python-app --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}"
+
+echo "✅ Resource monitoring completed"
+```
+
+### 🎯 Subtask 3.3: Container Logs and Debugging
+
+#### Step 1: Examine Container Logs
+```bash
+# Check application logs
+echo "📋 Container Logs Analysis:"
+echo "================================"
+
+docker logs my-python-app
+
+echo ""
+echo "✅ Log analysis completed"
+```
+
+#### Step 2: Interactive Container Exploration (Optional)
+```bash
+# Interactive container exploration
+echo "🔍 Container Exploration (Optional):"
+echo "You can explore the container interactively:"
+echo "Command: docker exec -it my-python-app bash"
+echo ""
+echo "Inside the container, try:"
+echo "- ls -la (list files)"
+echo "- ps aux (running processes)"
+echo "- env (environment variables)"
+echo "- curl http://localhost:8080 (test from inside)"
+echo "- exit (to leave container)"
+```
+
+#### Step 3: Health Check Verification
+```bash
+# Verify health check functionality
+echo "🏥 Health Check Verification:"
+echo "================================"
+
+# Wait for health check to run
+echo "⏳ Waiting for health check..."
+sleep 35
+
+# Check health status
+health_status=$(docker inspect my-python-app --format='{{.State.Health.Status}}')
+echo "Health Status: $health_status"
+
+if [ "$health_status" = "healthy" ]; then
+    echo "✅ Container is healthy"
+else
+    echo "⚠️  Container health check status: $health_status"
+    docker inspect my-python-app --format='{{range .State.Health.Log}}{{.Output}}{{end}}'
+fi
+```
+
+---
+
+## 🔧 Task 4: Enhanced Dockerfile with Environment Variables
+
+### 📌 Points to Remember
+**Environment Variables Best Practices:**
+- Use ENV for build-time variables that persist in containers
+- Use ARG for build-time only variables
+- Provide sensible defaults
+- Document all configurable variables
+- Security-sensitive values should be passed at runtime
+
+### 🎯 Subtask 4.1: Application Enhancement
+
+#### Step 1: Create Backup and Enhanced Application
+```bash
+# Navigate to app directory
+cd ~/docker-python-app/app
+
+# Create backup of original application
+cp app.py app.py.backup
+echo "✅ Backup created: app.py.backup"
+
+# Create enhanced application
+nano app.py
+```
+
+**Enhanced Python Application Code:**
+```python
+#!/usr/bin/env python3
+
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import json
+import os
+import sys
+from datetime import datetime
+
+class EnhancedHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        # Set comprehensive response headers
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Cache-Control', 'no-cache')
+        self.send_header('X-Powered-By', 'Docker-Python-App')
+        self.end_headers()
+        
+        # Collect comprehensive environment information
+        app_name = os.environ.get('APP_NAME', 'Docker Python App')
+        app_version = os.environ.get('APP_VERSION', '1.0.0')
+        environment = os.environ.get('ENVIRONMENT', 'development')
+        debug_mode = os.environ.get('DEBUG', 'false').lower() == 'true'
+        
+        # Build comprehensive response
+        response_data = {
+            "application": {
+                "name": app_name,
+                "version": app_version,
+                "environment": environment,
+                "debug_mode": debug_mode,
+                "startup_time": datetime.now().isoformat()
+            },
+            "message": f"🚀 Welcome to {app_name} v{app_version}!",
+            "status": "success",
+            "timestamp": datetime.now().isoformat(),
+            "container_info": {
+                "hostname": os.environ.get('HOSTNAME', 'unknown'),
+                "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+                "platform": sys.platform,
+                "port": os.environ.get('PORT', '8080'),
+                "working_directory": os.getcwd(),
+                "process_id": os.getpid()
+            },
+            "configuration": {
+                "max_connections": os.environ.get('MAX_CONNECTIONS', '10'),
+                "timeout": os.environ.get('TIMEOUT', '30'),
+                "log_level": os.environ.get('LOG_LEVEL', 'INFO')
+            },
+            "health": {
+                "status": "healthy",
+                "uptime_seconds": "dynamic",
+                "memory_usage": "available"
+            }
+        }
+        
+        # Add debug information if enabled
+        if debug_mode:
+            response_data["debug_info"] = {
+                "all_env_vars": {k: v for k, v in os.environ.items() if not k.startswith('_')},
+                "request_headers": dict(self.headers),
+                "server_info": {
+                    "server_version": self.server_version,
+                    "sys_version": self.sys_version
+                }
+            }
+        
+        # Send JSON response with proper formatting
+        json_response = json.dumps(response_data, indent=2 if debug_mode else None)
+        self.wfile.write(json_response.encode())
+    
+    def do_POST(self):
+        # Handle POST requests
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        
+        response = {
+            "message": "POST request received",
+            "method": "POST",
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        self.wfile.write(json.dumps(response, indent=2).encode())
+    
+    def log_message(self, format, *args):
+        # Enhanced logging with timestamps and environment info
+        log_level = os.environ.get('LOG_LEVEL', 'INFO')
+        app_name = os.environ.get('APP_NAME', 'Docker Python App')
+        
+        if log_level in ['DEBUG', 'INFO']:
+            timestamp = datetime.now().isoformat()
+            print(f"[{timestamp}] [{app_name}] {format % args}")
+
+def run_server():
+    # Get comprehensive configuration from environment
+    port = int(os.environ.get('PORT', 8080))
+    app_name = os.environ.get('APP_NAME', 'Enhanced Docker Python App')
+    app_version = os.environ.get('APP_VERSION', '2.0.0')
+    environment = os.environ.get('ENVIRONMENT', 'development')
+    debug_mode = os.environ.get('DEBUG', 'false').lower() == 'true'
+    max_connections = int(os.environ.get('MAX_CONNECTIONS', '10'))
+    
+    # Create and configure server
+    server = HTTPServer(('0.0.0.0', port), EnhancedHandler)
+    
+    # Display comprehensive startup information
+    print("=" * 60)
+    print(f"🚀 {app_name} v{app_version}")
+    print("=" * 60)
+    print(f"📡 Port: {port}")
+    print(f"🌍 Environment: {environment}")
+    print(f"🐛 Debug Mode: {debug_mode}")
+    print(f"🔗 Max Connections: {max_connections}")
+    print(f"📊 Log Level: {os.environ.get('LOG_LEVEL', 'INFO')}")
+    print(f"👤 User: {os.environ.get('USER', 'appuser')}")
+    print(f"🔗 Access URL: http://localhost:{port}")
+    print("=" * 60)
+    print("🎯 Application is ready to serve requests!")
+    print("📋 Available endpoints:")
+    print("   GET  / - Application status and information")
+    print("   POST / - Echo POST requests")
+    print("=" * 60)
+    print("Press Ctrl+C to stop the server")
+    
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\n🛑 Shutdown signal received")
+        print("🧹 Cleaning up...")
+        server.server_close()
+        print("✅ Server stopped gracefully")
+        sys.exit(0)
+
+if __name__ == '__main__':
+    run_server()
+```
+
+#### Step 2: Verify Enhanced Application
+```bash
+# Check file size and basic content
+ls -la app.py*
+echo "✅ Enhanced application created"
+
+# Verify first few lines
+head -15 app.py
+echo "✅ Application enhancement verified"
+```
+
+### 🎯 Subtask 4.2: Enhanced Dockerfile Creation
+
+#### Step 1: Create Dockerfile Backup
+```bash
+cd ~/docker-python-app
+
+# Backup original Dockerfile
+cp Dockerfile Dockerfile.backup
+echo "✅ Dockerfile backup created"
+```
+
+#### Step 2: Create Enhanced Dockerfile
+```bash
+# Create enhanced Dockerfile with comprehensive environment configuration
+nano Dockerfile
+```
+
+**Enhanced Dockerfile Content:**
+```dockerfile
+# Multi-stage build approach (production-ready)
+FROM python:3.11-slim as base
+
+# Set comprehensive metadata
+LABEL maintainer="student@alnafi.com" \
+      description="Enhanced Python web application with full environment configuration" \
+      version="2.0" \
+      created="2024" \
+      vendor="Al Nafi Learning" \
+      license="MIT" \
+      documentation="https://github.com/alnafi/docker-labs"
+
+# Set Python optimization environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONHASHSEED=random \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_DEFAULT_TIMEOUT=100
+
+# Set application environment variables with defaults
+ENV APP_NAME="Enhanced Docker Python App" \
+    APP_VERSION="2.0.0" \
+    ENVIRONMENT="production" \
+    DEBUG="false" \
+    PORT="8080" \
+    MAX_CONNECTIONS="50" \
+    TIMEOUT="30" \
+    LOG_LEVEL="INFO"
+
+# Install system dependencies and security updates
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        curl \
+        ca-certificates \
+        && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create application directory
+WORKDIR /usr/src/app
+
+# Copy requirements first for better Docker layer caching
+COPY app/requirements.txt ./
+
+# Install Python dependencies with security and optimization
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip cache purge
+
+# Copy application code
+COPY app/ .
+
+# Set proper permissions
+RUN chmod +x app.py
+
+# Create non-root user with specific UID/GID for security
+RUN groupadd -r appuser -g 1001 && \
+    useradd -r -u 1001 -g appuser -s /bin/bash -c "Application User" appuser && \
+    mkdir -p /home/appuser && \
+    chown -R appuser:appuser /usr/src/app /home/appuser
+
+# Switch to non-root user
+USER appuser
+
+# Set working directory permissions
+WORKDIR /usr/src/app
+
+# Expose application port
+EXPOSE $PORT
+
+# Add comprehensive health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python3 -c "import urllib.request; urllib.request.urlopen(f'http://localhost:{os.environ.get(\"PORT\", \"8080\")}').read()" || exit 1
+
+# Add volume for logs (optional)
+VOLUME ["/usr/src/app/logs"]
+
+# Define startup command with proper signal handling
+CMD ["python3", "app.py"]
+
+# Additional metadata
+LABEL app.name="${APP_NAME}" \
+      app.version="${APP_VERSION}" \
+      app.environment="${ENVIRONMENT}"
+```
+
+#### Step 3: Verify Enhanced Dockerfile
+```bash
+# Check Dockerfile size and content
+ls -la Dockerfile*
+echo "✅ Enhanced Dockerfile created"
+
+# Display key sections for verification
+grep -E "^(FROM|ENV|LABEL|RUN|EXPOSE|CMD)" Dockerfile
+echo "✅ Dockerfile verification completed"
+```
+
+### 🎯 Subtask 4.3: Docker Compose Configuration (Optional Enhancement)
+
+#### Step 1: Create Docker Compose File
+```bash
+# Create comprehensive Docker Compose configuration
+nano docker-compose.yml
+```
+
+**Complete Docker Compose Configuration:**
+```yaml
+version: '3.8'
+
+services:
+  # Production configuration
+  python-app-prod:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    image: myimage:v2
+    container_name: my-python-app-prod
+    ports:
+      - "8080:8080"
+    environment:
+      - APP_NAME=Production Docker Python App
+      - APP_VERSION=2.0.0
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - PORT=8080
+      - MAX_CONNECTIONS=100
+      - TIMEOUT=60
+      - LOG_LEVEL=INFO
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - app-network
+
+  # Development configuration
+  python-app-dev:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    image: myimage:v2-dev
+    container_name: my-python-app-dev
+    ports:
+      - "8081:8080"
+    environment:
+      - APP_NAME=Development Docker Python App
+      - APP_VERSION=2.0.0-dev
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - PORT=8080
+      - MAX_CONNECTIONS=10
+      - TIMEOUT=30
+      - LOG_LEVEL=DEBUG
+    restart: "no"
+    volumes:
+      - ./app:/usr/src/app:ro
+    networks:
+      - app-network
+
+  # Staging configuration
+  python-app-staging:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    image: myimage:v2-staging
+    container_name: my-python-app-staging
+    ports:
+      - "8082:8080"
+    environment:
+      - APP_NAME=Staging Docker Python App
+      - APP_VERSION=2.0.0-rc1
+      - ENVIRONMENT=staging
+      - DEBUG=false
+      - PORT=8080
+      - MAX_CONNECTIONS=50
+      - TIMEOUT=45
+      - LOG_LEVEL=WARN
+    restart: unless-stopped
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+    name: python-app-network
+
+# Optional: Add volumes for persistent data
+volumes:
+  app-logs:
+    driver: local
+```
+
+#### Step 2: Verify Compose File
+```bash
+# Check Docker Compose file
+ls -la docker-compose.yml
+echo "✅ Docker Compose file created"
+
+# Validate compose file syntax
+docker compose config --quiet && echo "✅ Compose file syntax is valid" || echo "❌ Compose file has syntax errors"
+```
+
+---
+
+## 🔨 Task 5: Build and Deploy Enhanced Application
+
+### 🎯 Subtask 5.1: Clean Previous Deployment
+
+#### Step 1: Stop and Remove Previous Containers
+```bash
+# Stop all running containers from previous tasks
+echo "🧹 Cleaning up previous deployment..."
+
+# Stop existing container if running
+if docker ps -q --filter name=my-python-app | grep -q .; then
+    docker stop my-python-app
+    echo "✅ Stopped my-python-app"
+fi
+
+# Remove existing container
+if docker ps -aq --filter name=my-python-app | grep -q .; then
+    docker rm my-python-app
+    echo "✅ Removed my-python-app container"
+fi
+
+# Show current container status
+docker ps -a --filter name=my-python-app
+echo "✅ Cleanup completed"
+```
+
+### 🎯 Subtask 5.2: Build Enhanced Image
+
+#### Step 1: Build with Version Tags
+```bash
+cd ~/docker-python-app
+
+# Build the enhanced image with multiple tags
+echo "🔨 Building enhanced Docker image..."
+echo "This build includes security enhancements and comprehensive configuration..."
+
+# Build with version 2.0 tag
+docker build -t myimage:v2 . 2>&1 | tee build-v2.log
+
+# Also tag as latest
+docker tag myimage:v2 myimage:latest
+
+echo "✅ Enhanced image build completed!"
+```
+
+#### Step 2: Compare Image Versions
+```bash
+# Compare image sizes and details
+echo "⚖️  Image Comparison:"
+echo "================================"
+
+docker images myimage --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedAt}}"
+
+echo ""
+echo "📊 Detailed Size Analysis:"
+docker system df -v | grep myimage
+```
+
+#### Step 3: Validate New Image
+```bash
+# Inspect new image configuration
+echo "🔍 Enhanced Image Inspection:"
+echo "================================"
+
+# Check environment variables
+echo "🌍 Environment Variables:"
+docker inspect myimage:v2 --format='{{range .Config.Env}}{{println .}}{{end}}' | grep -E "^(APP_|ENVIRONMENT|DEBUG|PORT)"
+
+# Check security configuration
+echo ""
+echo "🔒 Security Configuration:"
+docker inspect myimage:v2 --format='User: {{.Config.User}}'
+
+# Check health check
+echo ""
+echo "🏥 Health Check Configuration:"
+docker inspect myimage:v2 --format='{{.Config.Healthcheck.Test}}'
+```
+
+### 🎯 Subtask 5.3: Deploy with Default Configuration
+
+#### Step 1: Deploy Enhanced Container
+```bash
+# Run enhanced container with default environment
+echo "🚀 Deploying enhanced application with default configuration..."
+
+docker run -d \
+  --name my-python-app-v2 \
+  -p 8080:8080 \
+  --restart unless-stopped \
+  --health-interval=30s \
+  myimage:v2
+
+echo "✅ Enhanced container deployed successfully"
+
+# Wait for startup
+echo "⏳ Waiting for application startup..."
+sleep 5
+```
+
+#### Step 2: Verify Deployment
+```bash
+# Check container status
+echo "📊 Deployment Verification:"
+echo "================================"
+
+# Container status
+docker ps --filter name=my-python-app-v2 --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+# Health status
+echo ""
+echo "🏥 Health Status:"
+sleep 10  # Wait for health check
+docker inspect my-python-app-v2 --format='{{.State.Health.Status}}'
+```
+
+#### Step 3: Test Enhanced Application
+```bash
+# Test enhanced application features
+echo "🧪 Enhanced Application Testing:"
+echo "================================"
+
+# Basic connectivity
+echo "📡 Testing connectivity..."
+curl -s http://localhost:8080 >/dev/null && echo "✅ Application responding" || echo "❌ Connection failed"
+
+# Get full response with enhanced features
+echo ""
+echo "📋 Enhanced Application Response:"
+curl -s http://localhost:8080 | python3 -m json.tool
+```
+
+### 🎯 Subtask 5.4: Deploy with Custom Environments
+
+#### Step 1: Production Environment Deployment
+```bash
+# Deploy production configuration
+echo "🏭 Deploying Production Environment..."
+
+docker run -d \
+  --name production-app \
+  -p 8083:8080 \
+  -e APP_NAME="Production Docker Python App" \
+  -e APP_VERSION="2.0.0" \
+  -e ENVIRONMENT="production" \
+  -e DEBUG="false" \
+  -e MAX_CONNECTIONS="100" \
+  -e LOG_LEVEL="WARN" \
+  --restart unless-stopped \
+  --memory="512m" \
+  --cpus="1.0" \
+  myimage:v2
+
+echo "✅ Production environment deployed on port 8083"
+```
+
+#### Step 2: Development Environment Deployment
+```bash
+# Deploy development configuration
+echo "🧪 Deploying Development Environment..."
+
+docker run -d \
+  --name development-app \
+  -p 8084:8080 \
+  -e APP_NAME="Development Docker Python App" \
+  -e APP_VERSION="2.0.0-dev" \
+  -e ENVIRONMENT="development" \
+  -e DEBUG="true" \
+  -e MAX_CONNECTIONS="10" \
+  -e LOG_LEVEL="DEBUG" \
+  --restart "no" \
+  myimage:v2
+
+echo "✅ Development environment deployed on port 8084"
+```
+
+#### Step 3: Staging Environment Deployment
+```bash
+# Deploy staging configuration
+echo "🎭 Deploying Staging Environment..."
+
+docker run -d \
+  --name staging-app \
+  -p 8085:8080 \
+  -e APP_NAME="Staging Docker Python App" \
+  -e APP_VERSION="2.0.0-rc1" \
+  -e ENVIRONMENT="staging" \
+  -e DEBUG="false" \
+  -e MAX_CONNECTIONS="50" \
+  -e LOG_LEVEL="INFO" \
+  --restart unless-stopped \
+  myimage:v2
+
+echo "✅ Staging environment deployed on port 8085"
+```
+
+### 🎯 Subtask 5.5: Multi-Environment Testing
+
+#### Step 1: Test All Environments
+```bash
+# Comprehensive multi-environment testing
+echo "🌐 Multi-Environment Testing:"
+echo "================================"
+
+# Wait for all containers to start
+echo "⏳ Waiting for all environments to initialize..."
+sleep 10
+
+# Test each environment
+environments=("8083:Production" "8084:Development" "8085:Staging")
+
+for env in "${environments[@]}"; do
+    port=$(echo $env | cut -d: -f1)
+    name=$(echo $env | cut -d: -f2)
+    
+    echo ""
+    echo "🧪 Testing $name Environment (Port $port):"
+    echo "----------------------------------------"
+    
+    if curl -s http://localhost:$port >/dev/null; then
+        echo "✅ $name - Connection successful"
+        
+        # Extract key information
+        response=$(curl -s http://localhost:$port)
+        app_name=$(echo $response | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['application']['name'])")
+        environment=$(echo $response | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['application']['environment'])")
+        debug=$(echo $response | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['application']['debug_mode'])")
+        
+        echo "   📱 App Name: $app_name"
+        echo "   🌍 Environment: $environment"
+        echo "   🐛 Debug Mode: $debug"
+    else
+        echo "❌ $name - Connection failed"
+    fi
+done
+```
+
+#### Step 2: Environment Comparison
+```bash
+# Compare configurations side by side
+echo ""
+echo "📊 Environment Configuration Comparison:"
+echo "================================"
+
+# Show container resource usage
+docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}" \
+  production-app development-app staging-app my-python-app-v2
+
+echo ""
+echo "📋 Container Status Overview:"
+docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}" \
+  --filter name=production-app --filter name=development-app --filter name=staging-app --filter name=my-python-app-v2
+```
+
+#### Step 3: Log Analysis
+```bash
+# Analyze logs from different environments
+echo ""
+echo "📝 Log Analysis Across Environments:"
+echo "================================"
+
+containers=("production-app" "development-app" "staging-app")
+
+for container in "${containers[@]}"; do
+    echo ""
+    echo "📋 $container logs (last 5 lines):"
+    echo "----------------------------------------"
+    docker logs --tail 5 $container
+done
+```
+
+---
+
+## 🔧 Advanced Configuration and Docker Compose Deployment (Optional)
+
+### 🎯 Subtask 6.1: Docker Compose Multi-Environment Deployment
+
+#### Step 1: Deploy Using Docker Compose
+```bash
+# Deploy all environments using Docker Compose
+echo "🎼 Docker Compose Multi-Environment Deployment:"
+echo "================================"
+
+# Stop individual containers to avoid port conflicts
+docker stop production-app development-app staging-app my-python-app-v2 2>/dev/null || true
+
+# Deploy using docker compose
+docker compose up -d
+
+echo "✅ Docker Compose deployment initiated"
+```
+
+#### Step 2: Verify Compose Deployment
+```bash
+# Verify Docker Compose deployment
+echo "📊 Docker Compose Deployment Status:"
+echo "================================"
+
+# Show compose services
+docker compose ps
+
+# Show networks created
+docker network ls | grep python-app
+
+echo "✅ Compose deployment verification completed"
+```
+
+#### Step 3: Test Compose Services
+```bash
+# Test all compose services
+echo "🧪 Testing Docker Compose Services:"
+echo "================================"
+
+# Test each service
+services=("8080:Production" "8081:Development" "8082:Staging")
+
+for service in "${services[@]}"; do
+    port=$(echo $service | cut -d: -f1)
+    name=$(echo $service | cut -d: -f2)
+    
+    echo ""
+    echo "🧪 Testing Compose $name Service (Port $port):"
+    
+    if curl -s http://localhost:$port >/dev/null; then
+        echo "✅ $name service is responding"
+        # Get app name from response
+        app_name=$(curl -s http://localhost:$port | python3 -c "import sys, json; data=json.load(sys.stdin); print(data['application']['name'])" 2>/dev/null || echo "N/A")
+        echo "   📱 App: $app_name"
+    else
+        echo "❌ $name service not responding"
+    fi
+done
+```
+
+---
+
+## 🛠️ Troubleshooting Toolkit
+
+### 📌 Points to Remember
+**Common Docker Issues:**
+- Port conflicts: Use different ports or stop conflicting containers
+- Permission errors: Check user configuration in Dockerfile
+- Build context issues: Ensure files exist in build context
+- Health check failures: Verify application is listening on correct port
+
+### 🔍 Diagnostic Commands
+
+#### System-Level Diagnostics
+```bash
+echo "🔍 Docker System Diagnostics:"
+echo "================================"
+
+# Docker version and info
+docker version --format '{{.Server.Version}}'
+echo "✅ Docker version checked"
+
+# System resource usage
+docker system df
+echo "✅ System disk usage checked"
+
+# Check Docker daemon status
+systemctl is-active docker && echo "✅ Docker daemon is active" || echo "❌ Docker daemon issues"
+```
+
+#### Container Diagnostics
+```bash
+echo ""
+echo "📊 Container Diagnostics:"
+echo "================================"
+
+# List all containers (running and stopped)
+docker ps -a --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"
+
+# Check for failed containers
+failed_containers=$(docker ps -a --filter status=exited --format "{{.Names}}")
+if [ -n "$failed_containers" ]; then
+    echo "⚠️  Failed containers found:"
+    echo "$failed_containers"
+else
+    echo "✅ No failed containers"
+fi
+```
+
+#### Network Diagnostics
+```bash
+echo ""
+echo "🌐 Network Diagnostics:"
+echo "================================"
+
+# Check port usage
+echo "📡 Port Usage Check:"
+netstat -tulpn 2>/dev/null | grep -E ':(808[0-5])' || echo "No ports 8080-8085 in use"
+
+# Check Docker networks
+echo ""
+echo "🔗 Docker Networks:"
+docker network ls --format "table {{.Name}}\t{{.Driver}}\t{{.Scope}}"
+```
+
+#### Image Diagnostics
+```bash
+echo ""
+echo "🖼️ Image Diagnostics:"
+echo "================================"
+
+# Check for dangling images
+dangling=$(docker images -f dangling=true -q)
+if [ -n "$dangling" ]; then
+    echo "⚠️  Dangling images found: $(echo $dangling | wc -w)"
+else
+    echo "✅ No dangling images"
+fi
+
+# Check image sizes
+docker images myimage --format "table {{.Tag}}\t{{.Size}}\t{{.CreatedAt}}"
+```
+
+### 🚨 Common Issues and Solutions
+
+#### Issue 1: Build Failures
+```bash
+echo ""
+echo "🔧 Build Failure Troubleshooting:"
+echo "================================"
+
+# Check build context
+echo "📁 Build Context Check:"
+ls -la ~/docker-python-app/
+
+# Verify required files
+required_files=("Dockerfile" "app/app.py" "app/requirements.txt")
+for file in "${required_files[@]}"; do
+    if [[ -f "~/docker-python-app/$file" ]]; then
+        echo "✅ $file exists"
+    else
+        echo "❌ $file missing"
+    fi
+done
+```
+
+#### Issue 2: Container Start Failures
+```bash
+echo ""
+echo "🔧 Container Start Failure Troubleshooting:"
+echo "================================"
+
+# Check container logs for any failed containers
+for container in $(docker ps -a --filter status=exited --format "{{.Names}}"); do
+    echo "📋 Logs for failed container: $container"
+    docker logs --tail 10 $container
+    echo "----------------------------------------"
+done
+```
+
+#### Issue 3: Port Conflicts
+```bash
+echo ""
+echo "🔧 Port Conflict Resolution:"
+echo "================================"
+
+# Show what's using Docker ports
+ports=(8080 8081 8082 8083 8084 8085)
+for port in "${ports[@]}"; do
+    if netstat -tulpn 2>/dev/null | grep -q ":$port "; then
+        echo "⚠️  Port $port is in use"
+        # Show what's using it
+        netstat -tulpn 2>/dev/null | grep ":$port "
+    else
+        echo "✅ Port $port is available"
+    fi
+done
+```
+
+### 🛠️ Quick Fix Commands
+```bash
+echo ""
+echo "⚡ Quick Fix Commands Reference:"
+echo "================================"
+echo "# Stop all containers:"
+echo "docker stop \$(docker ps -q)"
+echo ""
+echo "# Remove all containers:"
+echo "docker rm \$(docker ps -aq)"
+echo ""
+echo "# Remove all images:"
+echo "docker rmi \$(docker images -q)"
+echo ""
+echo "# Clean up system:"
+echo "docker system prune -af"
+echo ""
+echo "# Reset Docker Compose:"
+echo "docker compose down && docker compose up -d"
+```
+
+---
+
+## 🧹 Comprehensive Cleanup
+
+### 🎯 Subtask: Complete Environment Cleanup
+
+#### Step 1: Stop All Services
+```bash
+echo "🛑 Stopping All Services:"
+echo "================================"
+
+# Stop Docker Compose services
+docker compose down 2>/dev/null || echo "No compose services to stop"
+
+# Stop individual containers
+containers=$(docker ps -q --filter name=my-python-app --filter name=production-app --filter name=development-app --filter name=staging-app)
+if [ -n "$containers" ]; then
+    docker stop $containers
+    echo "✅ All containers stopped"
+else
+    echo "✅ No containers running"
+fi
+```
+
+#### Step 2: Remove Containers
+```bash
+echo ""
+echo "🗑️ Removing Containers:"
+echo "================================"
+
+# Remove all lab containers
+containers=$(docker ps -aq --filter name=my-python-app --filter name=production-app --filter name=development-app --filter name=staging-app)
+if [ -n "$containers" ]; then
+    docker rm $containers
+    echo "✅ All containers removed"
+else
+    echo "✅ No containers to remove"
+fi
+```
+
+#### Step 3: Clean Up Images (Optional)
+```bash
+echo ""
+echo "🖼️ Image Cleanup (Optional):"
+echo "================================"
+
+# Show current images
+docker images myimage --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"
+
+echo ""
+echo "To remove images, run:"
+echo "docker rmi myimage:latest myimage:v2"
+echo "docker rmi python:3.11-slim  # (if desired)"
+echo ""
+echo "⚠️  Keeping images for future use - run commands above if cleanup needed"
+```
+
+#### Step 4: Network Cleanup
+```bash
+echo ""
+echo "🌐 Network Cleanup:"
+echo "================================"
+
+# Remove custom networks if they exist
+if docker network ls | grep -q python-app-network; then
+    docker network rm python-app-network
+    echo "✅ Custom networks removed"
+else
+    echo "✅ No custom networks to remove"
+fi
+```
+
+#### Step 5: System Cleanup
+```bash
+echo ""
+echo "🧽 System Cleanup:"
+echo "================================"
+
+# Clean up unused resources
+docker system prune -f
+
+echo "✅ System cleanup completed"
+```
+
+#### Step 6: Verification
+```bash
+echo ""
+echo "✅ Cleanup Verification:"
+echo "================================"
+
+echo "📊 Remaining Docker Resources:"
+echo "Containers: $(docker ps -aq | wc -l)"
+echo "Images: $(docker images -q | wc -l)"
+echo "Networks: $(docker network ls --format "{{.Name}}" | grep -v bridge | grep -v host | grep -v none | wc -l)"
+echo "Volumes: $(docker volume ls -q | wc -l)"
+
+echo ""
+echo "🎯 Final Status:"
+docker ps -a --filter name=my-python-app --filter name=production-app --filter name=development-app --filter name=staging-app
+```
+
+---
+
+## 📚 Quick Reference Card
+
+### 🔖 Essential Docker Commands
+```bash
+# Building Images
+docker build -t image-name .
+docker build -t image-name:tag .
+
+# Running Containers
+docker run -d -p host:container --name container-name image-name
+docker run -it --rm image-name bash  # Interactive debugging
+
+# Container Management
+docker ps                    # Running containers
+docker ps -a                # All containers
+docker logs container-name   # View logs
+docker stop container-name   # Stop container
+docker rm container-name     # Remove container
+
+# Image Management
+docker images               # List images
+docker rmi image-name       # Remove image
+docker inspect image-name   # Detailed info
+
+# Environment Variables
+docker run -e VAR=value image-name
+docker run --env-file .env image-name
+
+# Health Checks
+docker inspect container-name --format='{{.State.Health.Status}}'
+
+# System Management
+docker system df            # Disk usage
+docker system prune -f      # Clean unused resources
+```
+
+### 🏗️ Dockerfile Best Practices
+```dockerfile
+# Use specific versions
+FROM python:3.11-slim
+
+# Optimize layer caching
+COPY requirements.txt ./
+RUN pip install -r requirements.txt
+COPY . .
+
+# Security practices
+RUN groupadd -r user && useradd -r -g user user
+USER user
+
+# Health checks
+HEALTHCHECK --interval=30s CMD curl -f http://localhost:8080/ || exit 1
+
+# Environment variables
+ENV APP_NAME="My App" \
+    PORT=8080
+```
+
+### 🌍 Environment Variable Patterns
+```bash
+# Production
+-e ENVIRONMENT=production -e DEBUG=false -e LOG_LEVEL=WARN
+
+# Development  
+-e ENVIRONMENT=development -e DEBUG=true -e LOG_LEVEL=DEBUG
+
+# Staging
+-e ENVIRONMENT=staging -e DEBUG=false -e LOG_LEVEL=INFO
+```
+
+---
+
+## 🎓 Understanding Verification
+
+### ✅ Knowledge Check: Interactive Quiz
+
+#### Question 1: Dockerfile Structure
+```bash
+echo "❓ What does each Dockerfile instruction do?"
+echo "================================"
+echo "FROM python:3.11-slim"
+echo "👉 Answer: Sets the base image for our container"
+echo ""
+echo "WORKDIR /usr/src/app"
+echo "👉 Answer: Sets the working directory inside container"
+echo ""
+echo "COPY app/ ."
+echo "👉 Answer: Copies files from host app/ directory to container current directory"
+echo ""
+echo "USER appuser"
+echo "👉 Answer: Switches to non-root user for security"
+echo ""
+echo "✅ Understanding verified!"
+```
+
+#### Question 2: Build Context
+```bash
+echo ""
+echo "❓ Why do we copy requirements.txt before copying application code?"
+echo "================================"
+echo "👉 Answer: Docker layer caching optimization"
+echo "   - If requirements.txt doesn't change, Docker reuses the cached layer"
+echo "   - Application code changes frequently, requirements change less often"
+echo "   - This speeds up subsequent builds significantly"
+echo ""
+echo "✅ Build optimization concept understood!"
+```
+
+#### Question 3: Environment Variables
+```bash
+echo ""
+echo "❓ What's the difference between ENV and ARG in Dockerfile?"
+echo "================================"
+echo "👉 ENV: Sets environment variables that persist in the running container"
+echo "👉 ARG: Sets build-time variables only, not available at runtime"
+echo ""
+echo "Example:"
+echo "ARG BUILD_VERSION=1.0    # Only during build"
+echo "ENV APP_VERSION=\$BUILD_VERSION  # Available at runtime"
+echo ""
+echo "✅ Environment variable concepts mastered!"
+```
+
+### 🏆 Hands-On Verification Tests
+
+#### Test 1: Custom Configuration
+```bash
+echo ""
+echo "🧪 Verification Test 1: Custom Configuration"
+echo "================================"
+echo "Task: Run a container with custom environment variables"
+echo ""
+echo "Command to try:"
+echo "docker run -d -p 9000:8080 -e APP_NAME='My Custom App' -e DEBUG=true myimage:v2"
+echo ""
+echo "Expected: Application should respond on port 9000 with custom name"
+echo "Verify with: curl http://localhost:9000"
+```
+
+#### Test 2: Health Check Understanding
+```bash
+echo ""
+echo "🧪 Verification Test 2: Health Check"
+echo "================================"
+echo "Task: Check container health status"
+echo ""
+echo "Commands to try:"
+echo "1. docker run -d --name health-test myimage:v2"
+echo "2. sleep 45  # Wait for health check"
+echo "3. docker inspect health-test --format='{{.State.Health.Status}}'"
+echo ""
+echo "Expected: Status should be 'healthy'"
+```
+
+#### Test 3: Multi-Stage Understanding
+```bash
+echo ""
+echo "🧪 Verification Test 3: Image Efficiency"
+echo "================================"
+echo "Task: Compare image sizes and understand optimization"
+echo ""
+echo "Commands to try:"
+echo "docker images myimage --format 'table {{.Tag}}\t{{.Size}}'"
+echo ""
+echo "Observation: Enhanced image should be reasonably sized due to:"
+echo "- Using slim base image"
+echo "- Multi-layer optimization"
+echo "- Removing unnecessary packages"
+```
+
+---
+
+## 🚀 Next Steps and Advanced Topics
+
+### 📈 Progressive Learning Path
+
+#### Immediate Next Steps
+1. **Multi-Stage Builds**
+   ```dockerfile
+   FROM python:3.11-slim as builder
+   # Build dependencies
+   
+   FROM python:3.11-slim as runtime
+   # Runtime only
+   ```
+
+2. **Advanced Networking**
+   ```bash
+   docker network create custom-network
+   docker run --network custom-network app
+   ```
+
+3. **Volume Management**
+   ```bash
+   docker volume create app-data
+   docker run -v app-data:/data app
+   ```
+
+#### Intermediate Topics
+- **Docker Compose with databases and services**
+- **Container orchestration basics**
+- **CI/CD pipeline integration**
+- **Security scanning and hardening**
+
+#### Advanced Topics
+- **Kubernetes deployment**
+- **Docker Swarm clustering**
+- **Production monitoring and logging**
+- **Container security best practices**
+
+### 📖 Recommended Resources
+
+#### Official Documentation
+- **Docker Official Docs**: https://docs.docker.com/
+- **Docker Best Practices**: https://docs.docker.com/develop/dev-best-practices/
+- **Dockerfile Reference**: https://docs.docker.com/engine/reference/builder/
+
+#### Certification Path
+- **Docker Certified Associate (DCA)**
+- **Kubernetes Administrator (CKA)**
+- **Cloud Native Computing Foundation (CNCF) certifications**
+
+---
+
+## 🎯 Lab Summary and Achievements
+
+### ✅ What You've Accomplished
+
+#### Core Skills Mastered
+✅ **Dockerfile Creation**: Written comprehensive, production-ready Dockerfiles  
+✅ **Image Building**: Built custom Docker images with proper optimization  
+✅ **Container Deployment**: Deployed applications with various configurations  
+✅ **Environment Management**: Implemented flexible environment variable systems  
+✅ **Security Practices**: Applied non-root users and proper permissions  
+✅ **Health Monitoring**: Implemented container health checks  
+✅ **Multi-Environment Setup**: Created production, staging, and development configurations  
+✅ **Troubleshooting**: Learned diagnostic techniques and problem resolution  
+
+#### Production-Ready Skills
+- **Layer optimization** for faster builds
+- **Security hardening** with non-root users
+- **Resource management** and monitoring
+- **Health checks** for reliability
+- **Environment-specific** configurations
+- **Comprehensive logging** and debugging
+
+#### Real-World Applications
+- **Microservices deployment**
+- **CI/CD pipeline integration**
+- **Cloud-native application development**
+- **DevOps workflow automation**
+
+### 📊 Technical Achievements
+
+**Images Built**: Multiple versions with different configurations  
+**Containers Deployed**: Production, staging, and development environments  
+**Best Practices Applied**: Security, optimization, and monitoring  
+**Troubleshooting Skills**: Comprehensive diagnostic and resolution techniques  
+
+### 🏆 Why This Matters
+
+You've gained essential skills for modern software development and deployment:
+
+- **Containerization expertise** - Critical for modern app deployment
+- **Environment management** - Essential for multi-stage deployments
+- **Security awareness** - Necessary for production systems
+- **Troubleshooting abilities** - Valuable for operational excellence
+- **Best practices knowledge** - Important for professional development
+
+### 🎓 Certification Readiness
+
+These skills directly contribute to:
+- **Docker Certified Associate (DCA)**
+- **Kubernetes certifications**
+- **Cloud provider certifications**
+- **DevOps engineering roles**
+
+### 🚀 Ready for Production
+
+You now have the knowledge and practical experience to:
+- Create production-ready containerized applications
+- Implement proper security and monitoring practices
+- Deploy applications across multiple environments
+- Troubleshoot and maintain containerized systems
+- Contribute to modern DevOps and cloud-native initiatives
+
+**Congratulations! You've completed an advanced, production-focused Docker lab that prepares you for real-world containerization challenges!** 🎉
