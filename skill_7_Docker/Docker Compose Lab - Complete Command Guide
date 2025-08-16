@@ -1,0 +1,752 @@
+# Docker Compose Lab - Complete Command Guide
+
+## Big Picture Overview
+
+Docker Compose is a powerful tool that allows you to define and manage multi-container Docker applications using a simple YAML file. Instead of running multiple `docker run` commands and managing containers individually, you can orchestrate entire application stacks with simple commands.
+
+### Why Docker Compose Matters:
+- **Multi-Container Apps**: Real applications often need multiple services (web server, database, cache, etc.)
+- **Service Orchestration**: Automatically handles service dependencies, networking, and startup order
+- **Environment Consistency**: Same setup across development, testing, and production
+- **Easy Scaling**: Scale services up/down with simple commands
+- **Developer Productivity**: Start entire application stacks with one command
+
+### What We'll Build:
+A complete web application with:
+- **Nginx Web Server**: Serves our HTML content
+- **MySQL Database**: Stores application data
+- **Custom Network**: Allows secure communication between services
+- **Persistent Storage**: Keeps database data safe
+- **Load Balancing**: Scale web servers for high availability
+
+---
+
+## Task 1: Install Docker Compose
+
+```bash
+echo "=== TASK 1: Installing and Verifying Docker Compose ==="
+echo "First, let's check if Docker is already installed and running..."
+
+# Check Docker version
+docker --version
+
+# Check Docker service status
+sudo systemctl status docker
+
+# Test Docker with hello-world
+echo "Testing Docker with hello-world container..."
+docker run hello-world
+
+echo ""
+echo "Now installing Docker Compose..."
+echo "Docker Compose helps us manage multi-container applications with a single YAML file"
+
+# Download the latest stable release of Docker Compose
+sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+
+# Make the binary executable
+sudo chmod +x /usr/local/bin/docker-compose
+
+# Create a symbolic link (optional, for easier access)
+sudo ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+
+echo ""
+echo "Verifying Docker Compose installation..."
+
+# Check Docker Compose version
+docker-compose --version
+
+# Display help information
+echo "Showing Docker Compose help (first 20 lines)..."
+docker-compose --help | head -20
+
+echo ""
+echo "✅ Docker Compose installation complete!"
+echo ""
+```
+
+---
+
+## Task 2: Create Multi-Service Application Structure
+
+```bash
+echo "=== TASK 2: Creating Multi-Service Application Structure ==="
+echo "We're creating a web application with separate web server and database services"
+echo "This demonstrates real-world application architecture with service separation"
+
+# Create project directory
+echo "Creating project directory structure..."
+mkdir ~/docker-compose-lab
+cd ~/docker-compose-lab
+
+# Create subdirectories for organization
+mkdir -p web/html
+mkdir -p database/init
+
+echo "Current directory structure:"
+tree . || ls -la
+
+echo ""
+echo "Creating HTML content for our web server..."
+echo "This will be served by Nginx running in a container"
+
+# Create index.html file
+cat > web/html/index.html << 'EOF'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Docker Compose Lab</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .info {
+            background-color: #e7f3ff;
+            padding: 15px;
+            border-left: 4px solid #2196F3;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Welcome to Docker Compose Lab!</h1>
+        <div class="info">
+            <h3>Multi-Container Application</h3>
+            <p>This web page is served by an Nginx container, which is part of a multi-container application managed by Docker Compose.</p>
+            <p><strong>Services Running:</strong></p>
+            <ul>
+                <li>Web Server: Nginx (Port 8080)</li>
+                <li>Database: MySQL (Port 3306)</li>
+            </ul>
+        </div>
+        <p>Congratulations! You have successfully deployed a multi-container application using Docker Compose.</p>
+    </div>
+</body>
+</html>
+EOF
+
+echo "HTML file created. Let's verify its contents:"
+head -10 web/html/index.html
+
+echo ""
+echo "Creating database initialization script..."
+echo "This SQL script will run automatically when MySQL container starts"
+
+# Create database initialization script
+cat > database/init/init.sql << 'EOF'
+-- Create a sample database
+CREATE DATABASE IF NOT EXISTS sampleapp;
+
+-- Use the database
+USE sampleapp;
+
+-- Create a users table
+CREATE TABLE IF NOT EXISTS users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) NOT NULL,
+    email VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert sample data
+INSERT INTO users (username, email) VALUES 
+('john_doe', 'john@example.com'),
+('jane_smith', 'jane@example.com'),
+('docker_user', 'docker@compose.com');
+
+-- Create a simple view
+CREATE VIEW user_count AS 
+SELECT COUNT(*) as total_users FROM users;
+EOF
+
+echo "Database initialization script created. Let's see what it contains:"
+cat database/init/init.sql
+
+echo ""
+echo "Now creating the main Docker Compose configuration file..."
+echo "This YAML file defines our entire application stack!"
+
+# Create docker-compose.yml file
+cat > docker-compose.yml << 'EOF'
+version: '3.8'
+
+services:
+  # Web Server Service
+  webserver:
+    image: nginx:alpine
+    container_name: compose-webserver
+    ports:
+      - "8080:80"
+    volumes:
+      - ./web/html:/usr/share/nginx/html:ro
+    depends_on:
+      - database
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # Database Service
+  database:
+    image: mysql:8.0
+    container_name: compose-database
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword123
+      MYSQL_DATABASE: sampleapp
+      MYSQL_USER: appuser
+      MYSQL_PASSWORD: apppassword123
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+      - mysql-data:/var/lib/mysql
+    networks:
+      - app-network
+    restart: unless-stopped
+
+# Define named volumes
+volumes:
+  mysql-data:
+    driver: local
+
+# Define custom networks
+networks:
+  app-network:
+    driver: bridge
+EOF
+
+echo ""
+echo "Docker Compose file created! Let's examine its structure:"
+echo "=== DOCKER COMPOSE FILE BREAKDOWN ==="
+echo "• version: Specifies Compose file format version"
+echo "• services: Defines containers that make up our application"
+echo "• volumes: Persistent data storage (survives container restarts)"
+echo "• networks: Custom network for secure service communication"
+echo ""
+
+# Show the compose file with line numbers for better understanding
+echo "Here's our complete docker-compose.yml:"
+cat -n docker-compose.yml
+
+echo ""
+echo "Let's verify our complete project structure:"
+find . -type f -name "*.yml" -o -name "*.html" -o -name "*.sql" | sort
+```
+
+---
+
+## Task 3: Start Multi-Container Application
+
+```bash
+echo "=== TASK 3: Launching Multi-Container Application ==="
+echo "Now we'll bring up our entire application stack with one command!"
+
+echo ""
+echo "Before starting, let's validate our docker-compose.yml syntax:"
+docker-compose config
+
+echo ""
+echo "Starting all services in detached mode (background)..."
+echo "This will:"
+echo "1. Create a custom network for service communication"
+echo "2. Create named volumes for persistent data"
+echo "3. Pull required Docker images (nginx:alpine, mysql:8.0)"
+echo "4. Start database service first (due to depends_on)"
+echo "5. Start web server service"
+
+# Start all services defined in docker-compose.yml
+docker-compose up -d
+
+echo ""
+echo "Services are starting... Let's monitor the startup process:"
+
+# View logs from all services
+echo "=== STARTUP LOGS ==="
+docker-compose logs
+
+echo ""
+echo "Let's check the status of our services:"
+
+# List running containers
+docker-compose ps
+
+echo ""
+echo "Let's also check with regular docker ps for comparison:"
+# Check container status
+docker ps
+
+echo ""
+echo "Verifying our custom network was created:"
+# Verify network connectivity
+docker network ls | grep docker-compose-lab
+
+echo ""
+echo "Checking our named volume for database persistence:"
+docker volume ls | grep mysql-data
+
+echo ""
+echo "Let's wait a moment for services to fully initialize..."
+sleep 10
+
+echo ""
+echo "Testing our application..."
+
+# Test web server response
+echo "=== WEB SERVER TEST ==="
+echo "Testing HTTP response from web server:"
+curl -I http://localhost:8080
+
+echo ""
+echo "Getting actual content (first few lines):"
+curl -s http://localhost:8080 | head -10
+
+echo ""
+echo "=== DATABASE TEST ==="
+echo "Testing database connectivity and checking our sample data:"
+
+# Test database connectivity (from within the database container)
+docker-compose exec database mysql -u appuser -papppassword123 -e "SELECT * FROM sampleapp.users;"
+
+echo ""
+echo "Checking user count view:"
+docker-compose exec database mysql -u appuser -papppassword123 -e "SELECT * FROM sampleapp.user_count;"
+
+echo ""
+echo "✅ Multi-container application is running successfully!"
+echo "🌐 Web application: http://localhost:8080"
+echo "🗃️  Database: localhost:3306 (user: appuser, password: apppassword123)"
+```
+
+---
+
+## Task 4: Service Scaling and Load Balancing
+
+```bash
+echo "=== TASK 4: Service Scaling and Load Balancing ==="
+echo "Now we'll learn how to scale services for high availability"
+
+echo ""
+echo "First, let's see current service status:"
+docker-compose ps
+
+echo ""
+echo "Creating a scalable version of our application..."
+echo "We need to remove container_name to allow multiple instances"
+
+# Create a scalable version of docker-compose.yml
+cat > docker-compose-scalable.yml << 'EOF'
+version: '3.8'
+
+services:
+  # Load Balancer
+  loadbalancer:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - webserver
+    networks:
+      - app-network
+
+  # Web Server Service (scalable)
+  webserver:
+    image: nginx:alpine
+    volumes:
+      - ./web/html:/usr/share/nginx/html:ro
+    depends_on:
+      - database
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # Database Service
+  database:
+    image: mysql:8.0
+    container_name: compose-database
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword123
+      MYSQL_DATABASE: sampleapp
+      MYSQL_USER: appuser
+      MYSQL_PASSWORD: apppassword123
+    volumes:
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+      - mysql-data:/var/lib/mysql
+    networks:
+      - app-network
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
+    driver: local
+
+networks:
+  app-network:
+    driver: bridge
+EOF
+
+echo ""
+echo "Creating Nginx load balancer configuration..."
+echo "This will distribute traffic across multiple web server instances"
+
+# Create nginx load balancer configuration
+cat > nginx.conf << 'EOF'
+events {
+    worker_connections 1024;
+}
+
+http {
+    upstream webservers {
+        server webserver:80;
+    }
+
+    server {
+        listen 80;
+        
+        location / {
+            proxy_pass http://webservers;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+    }
+}
+EOF
+
+echo ""
+echo "Load balancer configuration created. Let's examine it:"
+cat nginx.conf
+
+echo ""
+echo "Stopping current services to switch to scalable version..."
+
+# Stop current services
+docker-compose down
+
+echo ""
+echo "Starting with scalable configuration..."
+
+# Start with scalable configuration
+docker-compose -f docker-compose-scalable.yml up -d
+
+echo ""
+echo "Now scaling webserver to 3 instances for high availability..."
+echo "This demonstrates horizontal scaling - adding more instances to handle load"
+
+# Scale webserver to 3 instances
+docker-compose -f docker-compose-scalable.yml up -d --scale webserver=3
+
+echo ""
+echo "Let's see our scaled services:"
+
+# Verify scaling
+docker-compose -f docker-compose-scalable.yml ps
+
+echo ""
+echo "Checking all running containers:"
+docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Ports}}"
+
+echo ""
+echo "Testing load balancing across multiple web server instances..."
+echo "Making multiple requests to see load distribution:"
+
+for i in {1..5}; do
+    echo "Request $i:"
+    curl -s http://localhost:8080 | grep -o "<title>.*</title>"
+    sleep 1
+done
+
+echo ""
+echo "✅ Service scaling completed!"
+echo "You now have 3 web server instances behind a load balancer"
+```
+
+---
+
+## Task 5: Service Management and Cleanup
+
+```bash
+echo "=== TASK 5: Service Management and Cleanup ==="
+echo "Learning how to properly manage service lifecycles"
+
+echo ""
+echo "Current running services:"
+docker-compose -f docker-compose-scalable.yml ps
+
+echo ""
+echo "=== STOPPING SERVICES ==="
+echo "Stopping services gracefully (containers remain, just stopped)..."
+
+# Stop all services (containers remain)
+docker-compose -f docker-compose-scalable.yml stop
+
+echo ""
+echo "Verifying services are stopped:"
+# Verify services are stopped
+docker-compose -f docker-compose-scalable.yml ps
+
+echo ""
+echo "=== RESTARTING SERVICES ==="
+echo "Restarting stopped services..."
+
+# Restart stopped services
+docker-compose -f docker-compose-scalable.yml start
+
+echo ""
+echo "Services restarted. Let's verify:"
+docker-compose -f docker-compose-scalable.yml ps
+
+echo ""
+echo "We can also restart specific services:"
+# Or restart specific services
+echo "Restarting just the webserver service..."
+docker-compose -f docker-compose-scalable.yml restart webserver
+
+echo ""
+echo "=== COMPLETE CLEANUP ==="
+echo "Now let's properly clean up all resources..."
+
+echo ""
+echo "Step 1: Stop and remove containers and networks"
+# Stop and remove containers, networks
+docker-compose -f docker-compose-scalable.yml down
+
+echo ""
+echo "Step 2: Also cleaning up original compose services if any remain"
+docker-compose down
+
+echo ""
+echo "Let's also demonstrate cleanup with volume removal:"
+echo "Recreating services briefly to show volume cleanup..."
+
+docker-compose up -d
+sleep 5
+
+echo "Now stopping and removing everything including volumes:"
+# Stop and remove containers, networks, and volumes
+docker-compose down -v
+
+echo ""
+echo "Step 3: System-wide cleanup of unused resources"
+
+# Remove unused containers, networks, images
+echo "Cleaning unused containers, networks, and images:"
+docker system prune -f
+
+# Remove unused volumes
+echo "Cleaning unused volumes:"
+docker volume prune -f
+
+echo ""
+echo "Step 4: Checking disk usage after cleanup"
+# View disk usage
+echo "Current Docker disk usage:"
+docker system df
+
+echo ""
+echo "✅ Complete cleanup finished!"
+```
+
+---
+
+## Advanced Operations and Learning Commands
+
+```bash
+echo "=== ADVANCED DOCKER COMPOSE OPERATIONS ==="
+echo "Additional commands to deepen your understanding"
+
+echo ""
+echo "Let's start our basic application again for advanced operations:"
+docker-compose up -d
+
+sleep 10
+
+echo ""
+echo "=== SERVICE INFORMATION COMMANDS ==="
+
+echo "1. Viewing service configuration (validates and shows resolved config):"
+docker-compose config
+
+echo ""
+echo "2. Viewing logs with timestamps:"
+docker-compose logs -t --tail=20
+
+echo ""
+echo "3. Following logs in real-time (Ctrl+C to stop):"
+echo "   docker-compose logs -f"
+
+echo ""
+echo "4. Executing commands inside running containers:"
+echo "Checking web server container filesystem:"
+docker-compose exec webserver ls -la /usr/share/nginx/html
+
+echo ""
+echo "Checking database container processes:"
+docker-compose exec database ps aux
+
+echo ""
+echo "Testing database connection from web server container:"
+docker-compose exec webserver ping -c 3 database
+
+echo ""
+echo "=== ENVIRONMENT-SPECIFIC CONFIGURATIONS ==="
+echo "Creating override file for different environments..."
+
+# Create environment-specific override file
+cat > docker-compose.override.yml << 'EOF'
+version: '3.8'
+
+services:
+  webserver:
+    environment:
+      - ENV=development
+    ports:
+      - "8081:80"
+  
+  database:
+    environment:
+      - MYSQL_ROOT_PASSWORD=devpassword123
+EOF
+
+echo ""
+echo "Override file created. Docker Compose automatically uses override files:"
+cat docker-compose.override.yml
+
+echo ""
+echo "Viewing merged configuration (base + override):"
+docker-compose config
+
+echo ""
+echo "=== TROUBLESHOOTING COMMANDS ==="
+
+echo ""
+echo "1. Checking what's using specific ports:"
+echo "Checking port 8080:"
+sudo netstat -tulpn | grep :8080 || echo "Port 8080 is free"
+
+echo ""
+echo "2. Inspecting container networks:"
+docker network inspect docker-compose-lab_app-network
+
+echo ""
+echo "3. Checking container resource usage:"
+docker stats --no-stream
+
+echo ""
+echo "4. Inspecting volumes:"
+docker volume inspect docker-compose-lab_mysql-data
+
+echo ""
+echo "5. Viewing container processes:"
+docker-compose top
+
+echo ""
+echo "=== PERFORMANCE AND MONITORING ==="
+
+echo ""
+echo "1. Container resource limits example:"
+echo "Adding resource limits to services helps prevent one service from consuming all resources"
+
+echo ""
+echo "2. Health checks example:"
+echo "Health checks help Docker Compose know when services are truly ready"
+
+echo ""
+echo "3. Service dependencies:"
+echo "The 'depends_on' only controls startup order, not readiness"
+
+echo ""
+echo "=== LEARNING VERIFICATION ==="
+
+echo ""
+echo "Let's verify everything is working correctly:"
+
+echo ""
+echo "✓ Web service health check:"
+curl -f http://localhost:8080 > /dev/null && echo "Web service: OK" || echo "Web service: FAILED"
+
+echo ""
+echo "✓ Database service health check:"
+docker-compose exec database mysqladmin ping -h localhost --silent && echo "Database service: OK" || echo "Database service: FAILED"
+
+echo ""
+echo "✓ Inter-service communication:"
+docker-compose exec webserver wget -q --spider http://database:3306 2>/dev/null && echo "Network communication: OK" || echo "Testing network..."
+
+echo ""
+echo "✓ Volume persistence:"
+docker-compose exec database ls -la /var/lib/mysql | grep -q "sampleapp" && echo "Volume persistence: OK" || echo "Volume persistence: Check needed"
+
+echo ""
+echo "✓ Final service status:"
+docker-compose ps
+
+echo ""
+echo "🎉 LAB COMPLETED SUCCESSFULLY!"
+echo ""
+echo "=== WHAT YOU'VE LEARNED ==="
+echo "• Docker Compose installation and setup"
+echo "• Multi-container application architecture"
+echo "• YAML configuration for complex applications"
+echo "• Service networking and communication"
+echo "• Volume management for data persistence"
+echo "• Service scaling and load balancing"
+echo "• Proper cleanup and resource management"
+echo "• Troubleshooting and monitoring techniques"
+echo ""
+echo "=== NEXT STEPS FOR LEARNING ==="
+echo "• Explore Docker Swarm for production orchestration"
+echo "• Learn Kubernetes for enterprise container management"
+echo "• Practice with more complex multi-service applications"
+echo "• Implement monitoring and logging solutions"
+echo "• Study container security best practices"
+
+echo ""
+echo "Final cleanup:"
+docker-compose down -v
+docker system prune -f
+
+echo ""
+echo "✅ Lab completed and cleaned up!"
+```
+
+---
+
+## Quick Reference Commands
+
+```bash
+# Essential Docker Compose Commands
+echo "=== QUICK REFERENCE ==="
+echo "• docker-compose up -d              # Start services in background"
+echo "• docker-compose down               # Stop and remove containers"
+echo "• docker-compose ps                 # List services"
+echo "• docker-compose logs               # View logs"
+echo "• docker-compose exec SERVICE CMD   # Run command in service"
+echo "• docker-compose scale SERVICE=N    # Scale service to N instances"
+echo "• docker-compose config             # Validate and view config"
+echo "• docker-compose down -v            # Remove everything including volumes"
+```
+
+## Files Created in This Lab
+- `~/docker-compose-lab/docker-compose.yml` - Main application configuration
+- `~/docker-compose-lab/web/html/index.html` - Web content
+- `~/docker-compose-lab/database/init/init.sql` - Database initialization
+- `~/docker-compose-lab/docker-compose-scalable.yml` - Scalable configuration
+- `~/docker-compose-lab/nginx.conf` - Load balancer configuration
+- `~/docker-compose-lab/docker-compose.override.yml` - Environment overrides
