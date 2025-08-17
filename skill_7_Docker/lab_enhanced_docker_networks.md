@@ -20,7 +20,7 @@ Before starting this lab, you should have:
 - Understanding of container lifecycle management
 
 ## Lab Environment Setup
-**Al Nafi Cloud Machines**: This lab uses Al Nafi's pre-configured Linux-based cloud machines with Docker pre-installed. Simply click Start Lab to access your ready-to-use environment. No need to build your own VM or install Docker manually.
+Linux-based cloud machines with Docker pre-installed. Simply click Start Lab to access your ready-to-use environment. No need to build your own VM or install Docker manually.
 
 Your lab environment includes:
 - **Ubuntu 20.04 LTS** with Docker Engine installed
