@@ -75,7 +75,8 @@ pip install numpy matplotlib jupyter
 
 With the libraries installed in your environment, you can now start the Jupyter Notebook server.
 ```bash
-jupyter notebook```
+jupyter notebook
+```
 This will open a new tab in your web browser, running from your `neural_network_lab` directory. From the file navigator, click on **New** and select **Python 3 (ipykernel)** to create a new notebook to work in.
 
 ---
