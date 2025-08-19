@@ -271,7 +271,9 @@ In the terminal where you ran `jupyter notebook`, press `Ctrl + C` and then conf
 
 Once you are done with your work, you can deactivate the environment by simply typing:
 ```bash
-deactivate```
+deactivate
+```
+
 Your terminal prompt will return to normal. To work on the project again, just `cd` into the directory and run `source venv/bin/activate`.
 
 ---
