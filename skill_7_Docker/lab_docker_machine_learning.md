@@ -651,7 +651,7 @@ volumes:
 ### Task 6.4 Run Multi-Service App (⏱ \~5 min)
 
 ```bash
-docker compose up --build
+docker-compose up --build
 ```
 
 Expected logs:
