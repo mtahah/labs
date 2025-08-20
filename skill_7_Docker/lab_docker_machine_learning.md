@@ -587,31 +587,63 @@ nano docker-compose.yml
 Paste:
 
 ```yaml
-version: "3.9"
+version: "3.9" # Or a newer stable version like "3.8" if 3.9 causes issues with your Docker Compose client
+
 services:
   api:
-    build: .
-    command: python src/ml_api.py
+    build: . # Build context is the current directory, where your Dockerfile should be.
+             # Ensure your Dockerfile sets WORKDIR /app and installs dependencies.
+             # Example Dockerfile snippet:
+             # FROM ml-tensorflow:latest
+             # WORKDIR /app
+             # COPY requirements.txt .
+             # RUN pip install -r requirements.txt
+             # COPY . /app  # This copies src if you don't mount it.
+             # If you mount src (as below), you don't need 'COPY src /app/src' in Dockerfile.
+
+    # IMPORTANT: Run the container as your host user to avoid permission issues
+    # with mounted volumes like 'models' and 'src'.
+    # You might need to set UID and GID in your shell before running `docker compose up`:
+    # export UID=$(id -u) && export GID=$(id -g)
+    user: "${UID:-1000}:${GID:-1000}" # Use current host user/group, default to 1000:1000
+
+    command: python src/ml_api.py # Execute your API script
     ports:
-      - "5000:5000"
+      - "5000:5000" # Map host port 5000 to container port 5000
+
     volumes:
-      - ./models:/app/models
+      - ./models:/app/models # Mount host's models dir to container's /app/models for persistence
+      - ./src:/app/src     # <--- ADDED: Mount host's src dir for live code changes
+      # If your API reads/writes data files, you might also need:
+      # - ./data:/app/data
+
+    environment:
+      # Pass Postgres connection details to the API service.
+      # 'postgres' as the host name works because Docker Compose creates an internal network
+      # where services can resolve each other by their names.
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-mldb} # Use default or override from .env
+      POSTGRES_USER: ${POSTGRES_USER:-mluser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mlpassword}
+      # Any other environment variables your API needs...
+
     depends_on:
-      - postgres
+      - postgres # Ensure the postgres service starts before the api service
 
   postgres:
-    image: postgres:15
+    image: postgres:15 # Using a specific version is good practice
     environment:
-      POSTGRES_DB: mldb
-      POSTGRES_USER: mluser
-      POSTGRES_PASSWORD: mlpassword
+      # Set these in your .env file or explicitly here for local development
+      POSTGRES_DB: ${POSTGRES_DB:-mldb}
+      POSTGRES_USER: ${POSTGRES_USER:-mluser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mlpassword}
     ports:
-      - "5432:5432"
+      - "5432:5432" # Expose Postgres to your host machine if needed (e.g., for psql client)
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data # Mount named volume for persistent Postgres data
 
 volumes:
-  pgdata:
+  pgdata: # Define the named volume
 ```
 
 ---
