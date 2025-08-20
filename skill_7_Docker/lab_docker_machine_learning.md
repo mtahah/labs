@@ -276,8 +276,10 @@ if __name__ == "__main__":
 Run training:
 
 ```bash
-docker run --rm \
+docker run -it --rm \
     -v $(pwd)/models:/app/models \
+    -v $(pwd)/data:/app/data \
+    -v $(pwd)/src:/app/src \
     ml-tensorflow:latest \
     python src/simple_ml_model.py
 ```
