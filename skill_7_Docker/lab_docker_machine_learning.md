@@ -511,9 +511,9 @@ Run:
 
 ```bash
 docker run --rm \
-    -u $(id -u):$(id -g) \  # Ensure correct user permissions for mounted volumes
+    -u $(id -u):$(id -g) \
     -v $(pwd)/models:/app/models \
-    -v $(pwd)/src:/app/src \  # Mount the src directory
+    -v $(pwd)/src:/app/src \
     ml-tensorflow:latest \
     python src/model_manager.py
 ```
