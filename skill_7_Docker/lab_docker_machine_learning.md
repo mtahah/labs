@@ -503,12 +503,17 @@ def demo_model_persistence():
 
 if __name__ == "__main__":
     demo_model_persistence()
+```
+
 
 Run:
-```
+
+
 ```bash
 docker run --rm \
+    -u $(id -u):$(id -g) \  # Ensure correct user permissions for mounted volumes
     -v $(pwd)/models:/app/models \
+    -v $(pwd)/src:/app/src \  # Mount the src directory
     ml-tensorflow:latest \
     python src/model_manager.py
 ```
