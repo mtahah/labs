@@ -6,19 +6,19 @@ This lab will teach you to build a **complete microservices architecture** using
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    API Gateway (Port 3000)                 │
-│                 (Traffic routing & rate limiting)          │
-└─────────────────┬───────────────┬───────────────┬─────────┘
+│                    API Gateway (Port 3000)                  │
+│                 (Traffic routing & rate limiting)           │
+└─────────────────┬───────────────┬───────────────┬───────────┘
                   │               │               │
-          ┌───────▼─────┐ ┌───────▼─────┐ ┌───────▼─────┐
-          │ User Service│ │Product Service│ │Order Service│
-          │  (Port 3001)│ │  (Port 3002) │ │ (Port 3003) │
-          └─────────────┘ └─────────────┘ └─────────────┘
-                            ▲               ▲
-                            │               │
-                            └───────┬───────┘
+          ┌───────▼─────┐ ┌───────▼──────────┐ ┌──▼──────────┐
+          │ User Service│ │Product Service   │ │Order Service│
+          │  (Port 3001)│ │  (Port 3002)     │ │ (Port 3003) │
+          └─────────────┘ └──────────────────┘ └─────────────┘
+                                ▲                      ▲
+                                │                      │
+                                └───┬──────────────────┘
                                     │
-                         Inter-service Communication
+                       Inter-service Communication
 ```
 
 **What You'll Learn:**
