@@ -127,6 +127,7 @@ nano config/hadoop/core-site.xml
 ```
 Copy the following XML content into the nano editor. Then press `Ctrl+X`, then `Y`, then `Enter` to save and exit.
 ```xml
+<!-- CORRECT -->
 <?xml version="1.0" encoding="UTF-8"?>
 <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
 <configuration>
