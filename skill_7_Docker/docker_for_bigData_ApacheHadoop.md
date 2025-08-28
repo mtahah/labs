@@ -542,5 +542,72 @@ docker rmi apache/hadoop:3.3.6
 rm -rf ~/hadoop-docker-lab
 ```
 
+### Diagnosis when container doesn't stay up after starting. ERROR in Core-Site
+
+The error message is still pointing to the same issue:
+
+*   **Error:** `WstxParsingException: Illegal processing instruction target ("xml")`
+*   **File:** `core-site.xml`
+*   **Location:** `[row,col,system-id]: [2,5,...]` (Line 2)
+
+This confirms that the `core-site.xml` file inside your `config/hadoop` directory is still malformed. The previous edit with `nano` either didn't save correctly or the file was not fixed as intended.
+
+### The Foolproof Solution: Overwrite the File
+
+Let's not risk another editing mistake. We will use a command that **completely overwrites the file** with the correct content. This will guarantee that it is 100% correct.
+
+**Step 1: Stop the Cluster**
+First, make sure everything is stopped.
+
+```bash
+# Make sure you are in the ~/hadoop-docker-lab directory
+docker compose down
+```
+
+**Step 2: Overwrite `core-site.xml` with the Correct Content**
+Run this entire block of code in your terminal. It will replace the contents of `core-site.xml` with the correct version.
+
+```bash
+cat > config/hadoop/core-site.xml << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<configuration>
+    <property>
+        <name>fs.defaultFS</name>
+        <value>hdfs://namenode:9000</value>
+    </property>
+    <property>
+        <name>hadoop.http.staticuser.user</name>
+        <value>root</value>
+    </property>
+</configuration>
+EOF
+```
+
+**Step 3: Verify the File is Correct**
+Before starting again, let's look at the file's content to be absolutely sure the command worked.
+
+```bash
+cat config/hadoop/core-site.xml
+```
+The output should look exactly like the block of code above.
+
+**Step 4: Restart the Cluster**
+Now that we are certain the file is correct, start the cluster.
+
+```bash
+docker compose up -d
+```
+
+**Step 5: Check the Status**
+Wait 15-20 seconds for the services to initialize properly, then check the status.
+
+```bash
+docker ps
+```
+
+The containers should now be `Up` and remain running. This time, the `namenode` will be able to parse its configuration correctly and will not crash. You can then proceed with the lab.
+
+
 ### **Conclusion**
 Congratulations! You have successfully deployed a multi-container Hadoop cluster using Docker, interacted with HDFS, and run MapReduce jobs on a YARN cluster. This lab demonstrates the power of containerization for simplifying the deployment and management of complex big data infrastructure. You've gained practical skills relevant to both modern DevOps practices and foundational big data technologies.
