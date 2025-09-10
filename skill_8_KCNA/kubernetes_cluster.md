@@ -554,77 +554,100 @@ kubectl get pods -n kube-system | grep -E "(proxy|network|cni)"
 echo "Learning Tip: kube-proxy and CNI plugins handle cluster networking"
 ```
 
-## Troubleshooting Common Issues
+## Common Issues and Solutions Summary
 
-### Issue 1: Pod Stuck in Pending State
+### Issue 1: Docker Service Fails to Start
+**Symptoms**: `Job for docker.service failed because the control process exited with error code`
 
+**Quick Fix**:
 ```bash
-# If your Pod remains in Pending state, check Pod events
-kubectl describe pod nginx-demo | grep -A 10 Events
-
-echo "Learning Tip: Pending pods often have resource constraints or node selector issues"
+sudo systemctl stop docker.service docker.socket
+sudo pkill -f docker
+sudo systemctl daemon-reload
+sudo systemctl start docker.service
 ```
 
+**Alternative**: Use Docker convenience script if package installation fails:
 ```bash
-# Verify node resources
-kubectl describe nodes | grep -A 5 "Allocated resources"
-
-echo "Learning Tip: Insufficient node resources prevent pod scheduling"
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
 ```
 
-```bash
-# Check scheduler logs
-kubectl logs -n kube-system $(kubectl get pods -n kube-system | grep scheduler | awk '{print $1}') | tail-20
+### Issue 2: etcd Health Check Failures
+**Symptoms**: `context deadline exceeded`, `127.0.0.1:2379 is unhealthy`
 
-echo "Learning Tip: Scheduler logs explain why pods cannot be placed"
+**Explanation**: Common in resource-constrained minikube environments. Cluster usually still functions for basic operations.
+
+**Solutions**:
+- Increase minikube resources: `minikube start --cpus=4 --memory=8192`
+- Restart cluster: `minikube stop && minikube start`
+- Skip etcd health checks if cluster works otherwise
+
+### Issue 3: Command Syntax Errors
+**Symptoms**: `bash: tail-10: command not found`
+
+**Cause**: Missing spaces in command flags
+
+**Fix**: Always use spaces: `tail -10` not `tail-10`
+
+### Issue 4: Metrics API Not Available
+**Symptoms**: `error: Metrics API not available`
+
+**Solution**: Enable metrics-server addon:
+```bash
+minikube addons enable metrics-server
+kubectl wait --for=condition=ready pod -l k8s-app=metrics-server -n kube-system --timeout=120s
 ```
 
-### Issue 2: Cannot Access Control Plane Components
+### Issue 5: nslookup Not Found in Container
+**Symptoms**: `exec: "nslookup": executable file not found`
 
+**Cause**: Minimal containers don't include debugging tools
+
+**Solutions**:
+- Use `getent hosts` instead of `nslookup`
+- Use debug containers: `kubectl run dns-debug --image=busybox --rm -it --restart=Never -- nslookup`
+- Check `/etc/resolv.conf` for DNS configuration
+
+### Issue 6: minikube Resource Constraints
+**Common Problems**:
+- etcd timeouts
+- Slow pod scheduling  
+- Metrics collection failures
+
+**Prevention**:
 ```bash
-# If you cannot access control plane logs, verify cluster status
-kubectl cluster-info
-
-echo "Learning Tip: Inaccessible control plane usually indicates cluster connectivity issues"
+# Start minikube with adequate resources
+minikube start --driver=docker --cpus=4 --memory=8192 --disk-size=20g
 ```
 
-```bash
-# Check if components are running
-kubectl get pods -n kube-system
+## Pre-Lab Checklist for Future Labs
 
-echo "Learning Tip: All control plane pods should be in Running status"
-```
+### 1. System Preparation
+- [ ] Clean previous installations completely
+- [ ] Ensure adequate system resources (4GB+ RAM)
+- [ ] Update system packages: `sudo apt update && sudo apt upgrade -y`
 
-```bash
-# Restart minikube if necessary
-# minikube stop
-# minikube start
+### 2. Docker Setup Verification
+- [ ] Docker service running: `systemctl status docker`
+- [ ] User in docker group: `groups | grep docker`
+- [ ] Test docker: `docker run hello-world`
 
-echo "Learning Tip: Sometimes a cluster restart resolves temporary issues"
-```
+### 3. minikube Configuration
+- [ ] Start with sufficient resources: `minikube start --cpus=4 --memory=8192`
+- [ ] Enable required addons: `minikube addons enable metrics-server`
+- [ ] Verify cluster: `kubectl cluster-info`
 
-### Issue 3: Network Connectivity Issues
+### 4. Expected Behaviors (Not Errors)
+- etcd health checks may timeout in development environments
+- Minimal containers lack debugging tools
+- Metrics server needs time to collect data
+- Some commands may need fallback alternatives
 
-```bash
-# If Pod networking doesn't work, check Pod network configuration
-kubectl get pod nginx-demo -o yaml | grep -A 5 "podIP"
-
-echo "Learning Tip: Pods without IP addresses indicate networking problems"
-```
-
-```bash
-# Verify DNS resolution
-kubectl exec nginx-demo -- nslookup kubernetes.default
-
-echo "Learning Tip: DNS issues prevent service discovery within the cluster"
-```
-
-```bash
-# Check network policies (if any)
-kubectl get networkpolicies --all-namespaces
-
-echo "Learning Tip: Network policies can block pod-to-pod communication"
-```
+### 5. Troubleshooting Tools Ready
+- busybox image for network debugging
+- Alternative commands for resource monitoring
+- Fallback DNS testing methods
 
 ## Additional Learning Commands
 
