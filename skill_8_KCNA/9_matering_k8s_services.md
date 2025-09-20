@@ -501,6 +501,7 @@ By the end of this comprehensive lab, you will have mastered:
 ## 📚 Prerequisites Validation
 
 Let's ensure your environment is properly configured and verify your foundational knowledge.
+```
 
 ### Environment Setup and Validation
 
