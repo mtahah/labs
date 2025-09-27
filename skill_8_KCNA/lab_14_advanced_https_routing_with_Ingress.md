@@ -624,7 +624,7 @@ echo ""
 
 echo "🔍 WATCH AND LEARN - Creating Sophisticated Ingress Rules:"
 
-# Create advanced ingress with comprehensive routing
+# Create advanced ingress with comprehensive routing (without restricted annotations)
 cat > ingress-basic.yaml << 'EOF'
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -636,10 +636,10 @@ metadata:
     nginx.ingress.kubernetes.io/rewrite-target: /
     # Disable SSL redirect initially for testing
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
-    # Custom headers for debugging
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      more_set_headers "X-Ingress-Controller: nginx";
-      more_set_headers "X-Route-Source: kubernetes-ingress";
+    # Add basic debugging header (allowed annotation)
+    nginx.ingress.kubernetes.io/server-snippet: |
+      add_header X-Ingress-Controller "nginx" always;
+      add_header X-Route-Source "kubernetes-ingress" always;
   labels:
     purpose: path-routing
     environment: lab
@@ -659,47 +659,7 @@ spec:
               number: 80
       # App2 specific route  
       - path: /app2
-        pathType: Prefix
-        backend:
-          service:
-            name: app2-service
-            port:
-              number: 80
-      # Default route (fallback to app1)
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: app1-service
-            port:
-              number: 80
-EOF
-
-# Apply the Ingress configuration
-kubectl apply -f ingress-basic.yaml
-
-echo "⏱️  Waiting for ingress to be configured..."
-sleep 15
-
-echo ""
-echo "📊 INGRESS RESOURCE STATUS:"
-kubectl get ingress -n web-apps -o custom-columns="NAME:.metadata.name,CLASS:.spec.ingressClassName,HOSTS:.spec.rules[0].host,ADDRESS:.status.loadBalancer.ingress[0].ip" --no-headers
-
-echo ""
-echo "📊 DETAILED INGRESS INFORMATION:"
-kubectl describe ingress web-apps-ingress -n web-apps | grep -A 20 "Rules:" | head -20
-
-echo ""
-echo "🤔 ACTIVE RECALL CHECK:"
-echo "   1. What does 'rewrite-target: /' accomplish?"
-echo "   2. Why do we need both specific paths and a default path?"
-echo "   3. What's the difference between Prefix and Exact pathType?"
-echo ""
-
-echo "✅ DEEP DIVE: Path precedence follows specificity rules (longest match first)"
-echo "🚨 Troubleshooting: Check 'kubectl get events -n web-apps' for ingress issues"
-echo "================================================"
-echo ""
+        pathTy
 ```
 
 ### **🧠 Comprehensive Answer Block 3A:**
