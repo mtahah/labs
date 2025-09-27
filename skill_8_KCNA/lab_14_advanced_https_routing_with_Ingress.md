@@ -675,54 +675,48 @@ spec:
 ### **🧠 Active Learning Block 3B: DNS and Network Configuration**
 
 ```bash
-#!/bin/bash
-# ==========================================
-# DNS SETUP - Active Learning Block
-# ==========================================
-
-echo "🧠 PREDICT: Why do we need to configure DNS for our local testing?"
-echo "   Think about: domain resolution, host headers, load balancing..."
-echo "   What happens without proper DNS configuration?"
-echo ""
-
-echo "🔍 WATCH AND LEARN - Setting Up Local DNS Resolution:"
-
-# Get minikube IP and configure hosts
-MINIKUBE_IP=$(minikube ip)
-echo "🌐 Minikube Cluster IP: $MINIKUBE_IP"
-
-# Backup existing hosts file
-sudo cp /etc/hosts /etc/hosts.backup.$(date +%Y%m%d_%H%M%S)
-
-# Add entry to hosts file with verification
-if ! grep -q "myapps.local" /etc/hosts; then
-    echo "$MINIKUBE_IP myapps.local" | sudo tee -a /etc/hosts
-    echo "✅ Added myapps.local to hosts file"
-else
-    echo "⚠️  myapps.local already exists in hosts file"
-fi
-
-echo ""
-echo "📊 DNS CONFIGURATION VERIFICATION:"
-echo "Current hosts entries for myapps.local:"
-grep myapps.local /etc/hosts | column -t
-
-echo ""
-echo "📊 DNS RESOLUTION TEST:"
-nslookup myapps.local | grep -A 2 "Name:"
-ping -c 1 myapps.local | head -1
-
-echo ""
-echo "🤔 ACTIVE RECALL CHECK:"
-echo "   1. Why can't we access myapps.local without hosts file configuration?"
-echo "   2. What role does the Host header play in ingress routing?"
-echo "   3. How would this work differently in production?"
-echo ""
-
-echo "✅ DEEP DIVE: Host header determines which ingress rule applies"
-echo "🔄 SPACED REVIEW: This is similar to virtual hosting in web servers"
-echo "================================================"
-echo ""
+# Remove the problematic annotations and create clean ingress
+cat > ingress-basic.yaml << 'EOF'
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web-apps-ingress
+  namespace: web-apps
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+  labels:
+    purpose: path-routing
+    environment: lab
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: myapps.local
+    http:
+      paths:
+      - path: /app1
+        pathType: Prefix
+        backend:
+          service:
+            name: app1-service
+            port:
+              number: 80
+      - path: /app2
+        pathType: Prefix
+        backend:
+          service:
+            name: app2-service
+            port:
+              number: 80
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: app1-service
+            port:
+              number: 80
+EOF
+kubectl apply -f ingress-basic.yaml
 ```
 
 ### **🧠 Comprehensive Answer Block 3B:**
