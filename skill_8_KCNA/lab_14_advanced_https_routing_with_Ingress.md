@@ -40,6 +40,800 @@ kubectl version --client --output=yaml | grep gitVersion
 
 echo ""
 echo "🤔 ACTIVE RECALL CHECK:"
+echo "   1. Why do we need compatible kubectl/K8s versions?"
+echo "   2. What problems could version mismatches cause?"
+echo "   3. How would you explain version compatibility to a teammate?"
+echo ""
+
+echo "✅ MASTERY CHECK: Explain why we installed these specific tools"
+echo "================================================"
+echo ""
+```
+
+---
+
+## Task 1: Environment Setup and Cluster Preparation
+
+### **🧠 Active Learning Block 1A: Cluster Status Verification**
+
+```bash
+#!/bin/bash
+# ==========================================
+# CLUSTER VERIFICATION - Active Learning Block
+# ==========================================
+
+echo "🧠 PREDICT FIRST: What should a healthy Kubernetes cluster show?"
+echo "   Consider: node status, system pods, API server response..."
+echo "   Form your expectations before we check..."
+echo ""
+
+echo "🔍 WATCH AND LEARN - Cluster Health Check:"
+
+# Clean formatted cluster info
+echo "📊 CLUSTER INFORMATION:"
+kubectl cluster-info | column -t -s ':'
+echo ""
+
+echo "📊 NODE STATUS (Formatted):"
+kubectl get nodes -o custom-columns="NAME:.metadata.name,STATUS:.status.conditions[-1].type,VERSION:.status.nodeInfo.kubeletVersion,OS:.status.nodeInfo.osImage" --no-headers | column -t
+echo ""
+
+echo "📊 MINIKUBE STATUS:"
+minikube status | grep -E "(host|kubelet|apiserver|kubeconfig)" | column -t -s ':'
+
+echo ""
+echo "🤔 ACTIVE RECALL CHECK:"
+echo "   1. What does 'Ready' node status actually mean?"
+echo "   2. What would you investigate if nodes showed 'NotReady'?"
+echo "   3. Explain the difference between kubelet and API server status"
+echo ""
+
+echo "🔄 SPACED REVIEW: This connects to basic K8s architecture concepts"
+echo "✅ MASTER CHECK: Can you explain cluster components without looking?"
+echo "================================================"
+echo ""
+```
+
+### **🧠 Comprehensive Answer Block 1A:**
+**Node "Ready" Status:** Means the kubelet is healthy, has sufficient resources (CPU, memory, disk), and can schedule pods. The node has passed all health checks including network connectivity and container runtime functionality.
+
+**NotReady Investigation:** Check kubelet logs (`journalctl -u kubelet`), verify resources (`df -h`, `free -m`), network connectivity, and container runtime status. Common issues include disk pressure, memory pressure, or network plugin problems.
+
+**Kubelet vs API Server:** Kubelet manages pods on individual nodes (node-level), while API server handles cluster-wide operations, authentication, and state management (cluster-level). Both must be healthy for proper cluster operation.
+
+```bash
+#!/bin/bash
+# ==========================================
+# MINIKUBE STARTUP - Active Learning Block
+# ==========================================
+
+echo "🧠 PREDICT: What might happen if minikube isn't running?"
+echo "   Think about: API access, pod scheduling, service discovery..."
+echo ""
+
+# Start minikube with optimized settings
+if ! minikube status | grep -q "Running"; then
+    echo "🚀 Starting minikube with enhanced configuration:"
+    minikube start \
+        --driver=docker \
+        --cpus=4 \
+        --memory=4096 \
+        --disk-size=20g \
+        --kubernetes-version=v1.30.14
+    
+    echo "✅ Minikube started successfully!"
+    echo ""
+    
+    echo "📊 CLUSTER RESOURCES (Clean View):"
+    kubectl top nodes 2>/dev/null || echo "Metrics not yet available (normal for new clusters)"
+fi
+
+echo ""
+echo "🤔 ACTIVE RECALL: What resources did we allocate and why?"
+echo "🔄 CONNECTION: This setup ensures we can handle multiple applications"
+echo "================================================"
+echo ""
+```
+
+### **🧠 Active Learning Block 1B: Ingress Controller Setup**
+
+```bash
+#!/bin/bash
+# ==========================================
+# INGRESS CONTROLLER - Active Learning Block
+# ==========================================
+
+echo "🧠 PREDICT FIRST: What is an Ingress Controller and why do we need it?"
+echo "   Think about: external traffic, HTTP routing, load balancing..."
+echo "   Take 30 seconds to think through this..."
+echo ""
+
+echo "🔍 WATCH AND LEARN - Enabling NGINX Ingress:"
+
+# Enable ingress addon
+minikube addons enable ingress
+
+echo "⏱️  Waiting for ingress controller to be ready (this may take 60-120 seconds)..."
+kubectl wait --namespace ingress-nginx \
+    --for=condition=ready pod \
+    --selector=app.kubernetes.io/component=controller \
+    --timeout=180s
+
+echo ""
+echo "📊 INGRESS CONTROLLER STATUS (Clean Format):"
+kubectl get pods -n ingress-nginx -o custom-columns="NAME:.metadata.name,STATUS:.status.phase,READY:.status.containerStatuses[0].ready,AGE:.metadata.creationTimestamp" --no-headers | column -t
+echo ""
+
+echo "📊 INGRESS SERVICES:"
+kubectl get svc -n ingress-nginx -o custom-columns="NAME:.metadata.name,TYPE:.spec.type,CLUSTER-IP:.spec.clusterIP,EXTERNAL-IP:.status.loadBalancer.ingress[0].ip,PORTS:.spec.ports[*].port" --no-headers | column -t
+
+echo ""
+echo "🤔 ACTIVE RECALL CHECK:"
+echo "   1. What's the difference between Ingress resource and Ingress Controller?"
+echo "   2. Why do we need to wait for the controller to be ready?"
+echo "   3. How would you troubleshoot if the controller failed to start?"
+echo ""
+
+echo "✅ DEEP DIVE: Ingress Controller acts as reverse proxy + load balancer"
+echo "🚨 Troubleshooting: Check 'kubectl logs -n ingress-nginx [pod-name]' for issues"
+echo "================================================"
+echo ""
+```
+
+### **🧠 Comprehensive Answer Block 1B:**
+**Ingress vs Ingress Controller:** 
+- **Ingress Resource:** YAML configuration defining routing rules (what to do)
+- **Ingress Controller:** Actual software (NGINX, Traefik, etc.) that reads Ingress resources and implements the routing (how to do it)
+
+**Controller Readiness:** The controller needs time to start, load configurations, establish network bindings, and sync with the Kubernetes API. Routing won't work until it's fully operational.
+
+**Troubleshooting Steps:** Check controller pods (`kubectl get pods -n ingress-nginx`), examine logs (`kubectl logs -n ingress-nginx [controller-pod]`), verify addon status (`minikube addons list`), and ensure adequate cluster resources.
+
+---
+
+## Task 2: Deploy Multi-Application Architecture
+
+### **🧠 Active Learning Block 2A: Application Architecture Design**
+
+```bash
+#!/bin/bash
+# ==========================================
+# NAMESPACE STRATEGY - Active Learning Block
+# ==========================================
+
+echo "🧠 PREDICT: Why should we use namespaces for our applications?"
+echo "   Consider: organization, security, resource isolation..."
+echo "   What problems might arise without proper namespacing?"
+echo ""
+
+echo "🔍 WATCH AND LEARN - Creating Organized Namespace Structure:"
+
+# Create namespace with labels for better management
+kubectl create namespace web-apps --dry-run=client -o yaml > namespace.yaml
+echo "labels:" >> namespace.yaml
+echo "  environment: lab" >> namespace.yaml
+echo "  purpose: ingress-demo" >> namespace.yaml
+
+kubectl apply -f namespace.yaml
+
+echo "📊 NAMESPACE VERIFICATION:"
+kubectl get namespace web-apps -o custom-columns="NAME:.metadata.name,STATUS:.status.phase,LABELS:.metadata.labels" --no-headers
+echo ""
+
+echo "🤔 ACTIVE RECALL CHECK:"
+echo "   1. What benefits do namespaces provide for multi-app deployments?"
+echo "   2. How do namespaces affect service discovery?"
+echo "   3. What would happen if we didn't use namespaces?"
+echo ""
+
+echo "🔄 SPACED REVIEW: Remember namespaces from earlier K8s concepts?"
+echo "✅ MASTER CHECK: Explain namespace isolation to a beginner"
+echo "================================================"
+echo ""
+```
+
+### **🧠 Comprehensive Answer Block 2A:**
+**Namespace Benefits:** Resource isolation, access control boundaries, separate resource quotas, logical organization, avoiding naming conflicts, and easier management of related resources.
+
+**Service Discovery Impact:** Services in the same namespace can reference each other by name. Cross-namespace requires FQDN (`service.namespace.svc.cluster.local`). DNS resolution respects namespace boundaries.
+
+**Without Namespaces:** Resource naming conflicts, difficult access control, harder resource management, security boundary confusion, and mixing of different application concerns in the default namespace.
+
+### **🧠 Active Learning Block 2B: First Application Deployment**
+
+```bash
+#!/bin/bash
+# ==========================================
+# APPLICATION 1 DEPLOYMENT - Active Learning Block
+# ==========================================
+
+echo "🧠 PREDICT: What components do we need for a complete web application?"
+echo "   Think about: pods, services, configuration, networking..."
+echo "   How do these components work together?"
+echo ""
+
+echo "🔍 WATCH AND LEARN - Deploying App1 with Best Practices:"
+
+# Create comprehensive app1 configuration
+cat > app1-deployment.yaml << 'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app1-deployment
+  namespace: web-apps
+  labels:
+    app: app1
+    version: "1.0"
+    component: frontend
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: app1
+  template:
+    metadata:
+      labels:
+        app: app1
+        version: "1.0"
+    spec:
+      containers:
+      - name: app1
+        image: nginx:1.21-alpine
+        ports:
+        - containerPort: 80
+          name: http
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        volumeMounts:
+        - name: html-volume
+          mountPath: /usr/share/nginx/html
+      volumes:
+      - name: html-volume
+        configMap:
+          name: app1-html
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app1-html
+  namespace: web-apps
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Application 1 - Kubernetes Ingress Lab</title>
+        <style>
+            body { 
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                text-align: center; 
+                padding: 50px;
+                margin: 0;
+                min-height: 100vh;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+            }
+            .container {
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 20px;
+                padding: 40px;
+                backdrop-filter: blur(10px);
+                box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
+            }
+            h1 { color: #ffffff; font-size: 2.5em; margin-bottom: 20px; }
+            .info { background: rgba(0,0,0,0.2); padding: 15px; border-radius: 10px; margin: 10px 0; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🚀 Application 1</h1>
+            <div class="info">
+                <p><strong>Route:</strong> /app1</p>
+                <p><strong>Service:</strong> app1-service</p>
+                <p><strong>Purpose:</strong> Path-based routing demonstration</p>
+            </div>
+            <p>Successfully serving traffic via Kubernetes Ingress!</p>
+        </div>
+    </body>
+    </html>
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app1-service
+  namespace: web-apps
+  labels:
+    app: app1
+spec:
+  selector:
+    app: app1
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    protocol: TCP
+  type: ClusterIP
+EOF
+
+# Apply configuration
+kubectl apply -f app1-deployment.yaml
+
+echo "⏱️  Waiting for App1 deployment to be ready..."
+kubectl rollout status deployment/app1-deployment -n web-apps --timeout=120s
+
+echo ""
+echo "📊 APP1 DEPLOYMENT STATUS (Clean Format):"
+kubectl get deployment app1-deployment -n web-apps -o custom-columns="NAME:.metadata.name,READY:.status.readyReplicas,UP-TO-DATE:.status.updatedReplicas,AVAILABLE:.status.availableReplicas" --no-headers
+echo ""
+
+echo "📊 APP1 PODS:"
+kubectl get pods -n web-apps -l app=app1 -o custom-columns="NAME:.metadata.name,STATUS:.status.phase,READY:.status.containerStatuses[0].ready,NODE:.spec.nodeName" --no-headers | column -t
+
+echo ""
+echo "🤔 ACTIVE RECALL CHECK:"
+echo "   1. Why did we set resource limits and requests?"
+echo "   2. What do readiness and liveness probes accomplish?"
+echo "   3. How does the rolling update strategy work?"
+echo ""
+
+echo "✅ DEEP DIVE: Resource management prevents resource starvation"
+echo "🚨 Troubleshooting: Use 'kubectl describe pod [pod-name] -n web-apps' for issues"
+echo "================================================"
+echo ""
+```
+
+### **🧠 Comprehensive Answer Block 2B:**
+**Resource Limits/Requests:** Requests ensure guaranteed resources for scheduling; limits prevent resource overconsumption. This provides predictable performance and cluster stability, preventing one application from starving others.
+
+**Probe Functions:**
+- **Readiness Probe:** Determines if pod can receive traffic. Kubernetes removes unready pods from service endpoints.
+- **Liveness Probe:** Detects if container is healthy. Kubernetes restarts failed containers automatically.
+
+**Rolling Update Strategy:** Gradually replaces old pods with new ones. `maxUnavailable: 1` ensures at least one pod stays running; `maxSurge: 1` allows one extra pod during updates, providing zero-downtime deployments.
+
+### **🧠 Active Learning Block 2C: Second Application Deployment**
+
+```bash
+#!/bin/bash
+# ==========================================
+# APPLICATION 2 DEPLOYMENT - Active Learning Block
+# ==========================================
+
+echo "🧠 PREDICT: How should App2 differ from App1 for effective routing testing?"
+echo "   Think about: visual differences, unique identifiers, same architecture..."
+echo "   What would make routing verification easier?"
+echo ""
+
+echo "🔍 WATCH AND LEARN - Deploying App2 with Distinct Identity:"
+
+# Create app2 with different styling and clear identification
+cat > app2-deployment.yaml << 'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app2-deployment
+  namespace: web-apps
+  labels:
+    app: app2
+    version: "1.0"
+    component: frontend
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: app2
+  template:
+    metadata:
+      labels:
+        app: app2
+        version: "1.0"
+    spec:
+      containers:
+      - name: app2
+        image: nginx:1.21-alpine
+        ports:
+        - containerPort: 80
+          name: http
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        volumeMounts:
+        - name: html-volume
+          mountPath: /usr/share/nginx/html
+      volumes:
+      - name: html-volume
+        configMap:
+          name: app2-html
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app2-html
+  namespace: web-apps
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Application 2 - Kubernetes Ingress Lab</title>
+        <style>
+            body { 
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+                color: white;
+                text-align: center; 
+                padding: 50px;
+                margin: 0;
+                min-height: 100vh;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+            }
+            .container {
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 20px;
+                padding: 40px;
+                backdrop-filter: blur(10px);
+                box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
+            }
+            h1 { color: #ffffff; font-size: 2.5em; margin-bottom: 20px; }
+            .info { background: rgba(0,0,0,0.2); padding: 15px; border-radius: 10px; margin: 10px 0; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>⚡ Application 2</h1>
+            <div class="info">
+                <p><strong>Route:</strong> /app2</p>
+                <p><strong>Service:</strong> app2-service</p>
+                <p><strong>Purpose:</strong> Path-based routing demonstration</p>
+            </div>
+            <p>Alternative application demonstrating Ingress routing!</p>
+        </div>
+    </body>
+    </html>
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app2-service
+  namespace: web-apps
+  labels:
+    app: app2
+spec:
+  selector:
+    app: app2
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    protocol: TCP
+  type: ClusterIP
+EOF
+
+# Apply configuration
+kubectl apply -f app2-deployment.yaml
+
+echo "⏱️  Waiting for App2 deployment to be ready..."
+kubectl rollout status deployment/app2-deployment -n web-apps --timeout=120s
+
+echo ""
+echo "📊 MULTI-APPLICATION STATUS (Clean Overview):"
+kubectl get deployments -n web-apps -o custom-columns="NAME:.metadata.name,READY:.status.readyReplicas/2,UP-TO-DATE:.status.updatedReplicas,AVAILABLE:.status.availableReplicas,APP:.metadata.labels.app" --no-headers | column -t
+echo ""
+
+echo "📊 ALL PODS STATUS:"
+kubectl get pods -n web-apps -o custom-columns="NAME:.metadata.name,APP:.metadata.labels.app,STATUS:.status.phase,READY:.status.containerStatuses[0].ready" --no-headers | column -t
+
+echo ""
+echo "📊 ALL SERVICES:"
+kubectl get svc -n web-apps -o custom-columns="NAME:.metadata.name,TYPE:.spec.type,CLUSTER-IP:.spec.clusterIP,PORT:.spec.ports[0].port" --no-headers | column -t
+
+echo ""
+echo "🤔 ACTIVE RECALL CHECK:"
+echo "   1. How can you visually distinguish between the two applications?"
+echo "   2. What makes these services discoverable within the cluster?"
+echo "   3. Why do both apps use the same port but different services?"
+echo ""
+
+echo "🔄 SPACED REVIEW: How does this relate to microservices architecture?"
+echo "✅ MASTER CHECK: Explain the complete pod-to-service relationship"
+echo "================================================"
+echo ""
+```
+
+### **🧠 Comprehensive Answer Block 2C:**
+**Visual Distinction:** Different color schemes (blue/purple vs pink/red gradients), different icons (🚀 vs ⚡), and different route information displayed make it immediately clear which application is serving the request.
+
+**Service Discovery:** Services create DNS entries (`app1-service.web-apps.svc.cluster.local`) and maintain endpoint lists. Other pods can reach services by name within the same namespace or by FQDN across namespaces.
+
+**Same Port, Different Services:** Both use port 80 (HTTP standard), but each service creates a separate network endpoint with its own ClusterIP. The service selector determines which pods receive traffic, enabling multiple applications to coexist.
+
+---
+
+## Task 3: Configure Advanced Path-Based Routing
+
+### **🧠 Active Learning Block 3A: Ingress Resource Design**
+
+```bash
+#!/bin/bash
+# ==========================================
+# INGRESS STRATEGY - Active Learning Block
+# ==========================================
+
+echo "🧠 PREDICT: What routing rules do we need for our two applications?"
+echo "   Consider: default path, app-specific paths, host routing..."
+echo "   How should traffic be distributed?"
+echo ""
+
+echo "🔍 WATCH AND LEARN - Creating Sophisticated Ingress Rules:"
+
+# Create advanced ingress with comprehensive routing
+cat > ingress-basic.yaml << 'EOF'
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web-apps-ingress
+  namespace: web-apps
+  annotations:
+    # Path rewriting for clean URLs
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    # Disable SSL redirect initially for testing
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    # Custom headers for debugging
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Ingress-Controller: nginx";
+      more_set_headers "X-Route-Source: kubernetes-ingress";
+  labels:
+    purpose: path-routing
+    environment: lab
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: myapps.local
+    http:
+      paths:
+      # App1 specific route
+      - path: /app1
+        pathType: Prefix
+        backend:
+          service:
+            name: app1-service
+            port:
+              number: 80
+      # App2 specific route  
+      - path: /app2
+        pathType: Prefix
+        backend:
+          service:
+            name: app2-service
+            port:
+              number: 80
+      # Default route (fallback to app1)
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: app1-service
+            port:
+              number: 80
+EOF
+
+# Apply the Ingress configuration
+kubectl apply -f ingress-basic.yaml
+
+echo "⏱️  Waiting for ingress to be configured..."
+sleep 15
+
+echo ""
+echo "📊 INGRESS RESOURCE STATUS:"
+kubectl get ingress -n web-apps -o custom-columns="NAME:.metadata.name,CLASS:.spec.ingressClassName,HOSTS:.spec.rules[0].host,ADDRESS:.status.loadBalancer.ingress[0].ip" --no-headers
+
+echo ""
+echo "📊 DETAILED INGRESS INFORMATION:"
+kubectl describe ingress web-apps-ingress -n web-apps | grep -A 20 "Rules:" | head -20
+
+echo ""
+echo "🤔 ACTIVE RECALL CHECK:"
+echo "   1. What does 'rewrite-target: /' accomplish?"
+echo "   2. Why do we need both specific paths and a default path?"
+echo "   3. What's the difference between Prefix and Exact pathType?"
+echo ""
+
+echo "✅ DEEP DIVE: Path precedence follows specificity rules (longest match first)"
+echo "🚨 Troubleshooting: Check 'kubectl get events -n web-apps' for ingress issues"
+echo "================================================"
+echo ""
+```
+
+### **🧠 Comprehensive Answer Block 3A:**
+**Rewrite-Target Function:** Strips the matched path prefix before forwarding to the backend service. `/app1/page` becomes `/page` at the service level, allowing applications to serve content from their root path regardless of the ingress path.
+
+**Path Strategy:** Specific paths (`/app1`, `/app2`) handle targeted requests; default path (`/`) provides fallback behavior. This ensures no request returns a 404 while maintaining clear routing logic.
+
+**PathType Differences:**
+- **Prefix:** Matches path prefixes (e.g., `/app1` matches `/app1/anything`)  
+- **Exact:** Requires exact path match (e.g., `/app1` only matches `/app1`)
+- **ImplementationSpecific:** Depends on ingress controller implementation
+
+### **🧠 Active Learning Block 3B: DNS and Network Configuration**
+
+```bash
+#!/bin/bash
+# ==========================================
+# DNS SETUP - Active Learning Block
+# ==========================================
+
+echo "🧠 PREDICT: Why do we need to configure DNS for our local testing?"
+echo "   Think about: domain resolution, host headers, load balancing..."
+echo "   What happens without proper DNS configuration?"
+echo ""
+
+echo "🔍 WATCH AND LEARN - Setting Up Local DNS Resolution:"
+
+# Get minikube IP and configure hosts
+MINIKUBE_IP=$(minikube ip)
+echo "🌐 Minikube Cluster IP: $MINIKUBE_IP"
+
+# Backup existing hosts file
+sudo cp /etc/hosts /etc/hosts.backup.$(date +%Y%m%d_%H%M%S)
+
+# Add entry to hosts file with verification
+if ! grep -q "myapps.local" /etc/hosts; then
+    echo "$MINIKUBE_IP myapps.local" | sudo tee -a /etc/hosts
+    echo "✅ Added myapps.local to hosts file"
+else
+    echo "⚠️  myapps.local already exists in hosts file"
+fi
+
+echo ""
+echo "📊 DNS CONFIGURATION VERIFICATION:"
+echo "Current hosts entries for myapps.local:"
+grep myapps.local /etc/hosts | column -t
+
+echo ""
+echo "📊 DNS RESOLUTION TEST:"
+nslookup myapps.local | grep -A 2 "Name:"
+ping -c 1 myapps.local | head -1
+
+echo ""
+echo "🤔 ACTIVE RECALL CHECK:"
+echo "   1. Why can't we access myapps.local without hosts file configuration?"
+echo "   2. What role does the Host header play in ingress routing?"
+echo "   3. How would this work differently in production?"
+echo ""
+
+echo "✅ DEEP DIVE: Host header determines which ingress rule applies"
+echo "🔄 SPACED REVIEW: This is similar to virtual hosting in web servers"
+echo "================================================"
+echo ""
+```
+
+### **🧠 Comprehensive Answer Block 3B:**
+**Hosts File Necessity:** `myapps.local` is not a real domain, so DNS can't resolve it. The hosts file provides local DNS override, mapping the domain to minikube's IP address for testing purposes.
+
+**Host Header Role:** Ingress controllers use the HTTP Host header to determine which ingress rule applies. Without proper host resolution, the wrong rule might match or requests might be rejected entirely.
+
+**Production Differences:** Production uses real DNS records, load balancers with public IPs, and certificate authorities. The routing logic remains the same, but infrastructure is more robust and scalable.
+
+### **🧠 Active Learning Block 3C: Routing Verification**
+
+```bash
+#!/bin/bash
+# ==========================================
+# ROUTING TESTING - Active Learning Block
+# ==========================================
+
+echo "🧠 PREDICT: What should we see when testing each route?"
+echo "   Think about: different applications, custom headers, routing logic..."
+echo "   How can we verify routing is working correctly?"
+echo ""
+
+echo "🔍 WATCH AND LEARN - Comprehensive Routing Tests:"
+
+# Test default path (should serve app1)
+echo "📊 TESTING DEFAULT ROUTE (/):"
+echo "Expected: Application 1 content"
+curl -s -H "Host: myapps.local" http://$(minikube ip)/ | grep -o "<title>.*</title>" | head -1
+echo ""
+
+# Test app1 path  
+echo "📊 TESTING APP1 ROUTE (/app1):"
+echo "Expected: Application 1 content with routing info"
+curl -s -H "Host: myapps.local" http://$(minikube ip)/app1 | grep -o "<title>.*</title>" | head -1
+echo ""
+
+# Test app2 path
+echo "📊 TESTING APP2 ROUTE (/app2):"  
+echo "Expected: Application 2 content with different styling"
+curl -s -H "Host: myapps.local" http://$(minikube ip)/app2 | grep -o "<title>.*</title>" | head -1
+echo ""
+
+# Test custom headers
+echo "📊 TESTING CUSTOM HEADERS:"
+echo "Headers added by ingress controller:"
+curl -s -I -H "Host: myapps.local" http://$(minikube ip)/app1 | grep "X-Ingress-Controller\|X-Route-Source" | column -t -s ':'
+
+echo ""
+echo "📊 TESTING WITH DOMAIN NAME (DNS Resolution):"
+curl -s http://myapps.local/app1 | grep -E "(Application [12]|Route:)" | head -2
+
+echo ""
+echo "🤔 ACTIVE RECALL CHECK:"
+```
+## 🚀 Prerequisites Verification  # 2
+ 
+```bash
+#!/bin/bash
+# ==========================================
+# ENVIRONMENT VALIDATION - Active Learning Block
+# ==========================================
+
+echo "🧠 PREDICT FIRST: What components do you think we need for advanced Ingress routing?"
+echo "   Think about: cluster, ingress controller, certificates, DNS..."
+echo "   Take 20 seconds to form your predictions..."
+echo ""
+
+echo "🔍 WATCH AND LEARN - Installing Latest Compatible Versions:"
+
+# Ensure we have compatible versions
+sudo apt update && sudo apt install -y curl wget openssl apache2-utils
+
+# Install latest compatible kubectl (avoid version mismatches)
+echo "📦 Installing kubectl v1.30.14 (compatible with K8s 1.32.0):"
+curl -LO "https://dl.k8s.io/release/v1.30.14/bin/linux/amd64/kubectl"
+sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+echo "✅ kubectl version installed:"
+kubectl version --client --output=yaml | grep gitVersion
+
+echo ""
+echo "🤔 ACTIVE RECALL CHECK:"
 echo "   1. Why do both / and /app1 serve the same application?"
 echo "   2. How does the ingress controller know which backend to route to?"
 echo "   3. What would happen if we accessed a path that doesn't exist?"
