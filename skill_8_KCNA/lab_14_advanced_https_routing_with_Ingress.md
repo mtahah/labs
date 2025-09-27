@@ -612,69 +612,6 @@ echo ""
 ### **🧠 Active Learning Block 3A: Ingress Resource Design**
 
 ```bash
-#!/bin/bash
-# ==========================================
-# INGRESS STRATEGY - Active Learning Block
-# ==========================================
-
-echo "🧠 PREDICT: What routing rules do we need for our two applications?"
-echo "   Consider: default path, app-specific paths, host routing..."
-echo "   How should traffic be distributed?"
-echo ""
-
-echo "🔍 WATCH AND LEARN - Creating Sophisticated Ingress Rules:"
-
-# Create advanced ingress with comprehensive routing (without restricted annotations)
-cat > ingress-basic.yaml << 'EOF'
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: web-apps-ingress
-  namespace: web-apps
-  annotations:
-    # Path rewriting for clean URLs
-    nginx.ingress.kubernetes.io/rewrite-target: /
-    # Disable SSL redirect initially for testing
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
-    # Add basic debugging header (allowed annotation)
-    nginx.ingress.kubernetes.io/server-snippet: |
-      add_header X-Ingress-Controller "nginx" always;
-      add_header X-Route-Source "kubernetes-ingress" always;
-  labels:
-    purpose: path-routing
-    environment: lab
-spec:
-  ingressClassName: nginx
-  rules:
-  - host: myapps.local
-    http:
-      paths:
-      # App1 specific route
-      - path: /app1
-        pathType: Prefix
-        backend:
-          service:
-            name: app1-service
-            port:
-              number: 80
-      # App2 specific route  
-      - path: /app2
-        pathTy
-```
-
-### **🧠 Comprehensive Answer Block 3A:**
-**Rewrite-Target Function:** Strips the matched path prefix before forwarding to the backend service. `/app1/page` becomes `/page` at the service level, allowing applications to serve content from their root path regardless of the ingress path.
-
-**Path Strategy:** Specific paths (`/app1`, `/app2`) handle targeted requests; default path (`/`) provides fallback behavior. This ensures no request returns a 404 while maintaining clear routing logic.
-
-**PathType Differences:**
-- **Prefix:** Matches path prefixes (e.g., `/app1` matches `/app1/anything`)  
-- **Exact:** Requires exact path match (e.g., `/app1` only matches `/app1`)
-- **ImplementationSpecific:** Depends on ingress controller implementation
-
-### **🧠 Active Learning Block 3B: DNS and Network Configuration**
-
-```bash
 # Remove the problematic annotations and create clean ingress
 cat > ingress-basic.yaml << 'EOF'
 apiVersion: networking.k8s.io/v1
@@ -717,6 +654,62 @@ spec:
               number: 80
 EOF
 kubectl apply -f ingress-basic.yaml
+```
+
+### **🧠 Comprehensive Answer Block 3A:**
+**Rewrite-Target Function:** Strips the matched path prefix before forwarding to the backend service. `/app1/page` becomes `/page` at the service level, allowing applications to serve content from their root path regardless of the ingress path.
+
+**Path Strategy:** Specific paths (`/app1`, `/app2`) handle targeted requests; default path (`/`) provides fallback behavior. This ensures no request returns a 404 while maintaining clear routing logic.
+
+**PathType Differences:**
+- **Prefix:** Matches path prefixes (e.g., `/app1` matches `/app1/anything`)  
+- **Exact:** Requires exact path match (e.g., `/app1` only matches `/app1`)
+- **ImplementationSpecific:** Depends on ingress controller implementation
+
+### **🧠 Active Learning Block 3B: DNS and Network Configuration**
+
+```bash
+#!/bin/bash
+# ==========================================
+# ROUTING TESTING - Active Learning Block
+# ==========================================
+
+echo "🧠 PREDICT: What should we see when testing each route?"
+echo "   Think about: different applications, custom headers, routing logic..."
+echo "   How can we verify routing is working correctly?"
+echo ""
+
+echo "🔍 WATCH AND LEARN - Comprehensive Routing Tests:"
+
+# Test default path (should serve app1)
+echo "📊 TESTING DEFAULT ROUTE (/):"
+echo "Expected: Application 1 content"
+curl -s -H "Host: myapps.local" http://$(minikube ip)/ | grep -o "<title>.*</title>" | head -1
+echo ""
+
+# Test app1 path  
+echo "📊 TESTING APP1 ROUTE (/app1):"
+echo "Expected: Application 1 content with routing info"
+curl -s -H "Host: myapps.local" http://$(minikube ip)/app1 | grep -o "<title>.*</title>" | head -1
+echo ""
+
+# Test app2 path
+echo "📊 TESTING APP2 ROUTE (/app2):"  
+echo "Expected: Application 2 content with different styling"
+curl -s -H "Host: myapps.local" http://$(minikube ip)/app2 | grep -o "<title>.*</title>" | head -1
+echo ""
+
+# Test custom headers
+echo "📊 TESTING CUSTOM HEADERS:"
+echo "Headers added by ingress controller:"
+curl -s -I -H "Host: myapps.local" http://$(minikube ip)/app1 | grep "X-Ingress-Controller\|X-Route-Source" | column -t -s ':'
+
+echo ""
+echo "📊 TESTING WITH DOMAIN NAME (DNS Resolution):"
+curl -s http://myapps.local/app1 | grep -E "(Application [12]|Route:)" | head -2
+
+echo ""
+echo "🤔 ACTIVE RECALL CHECK:"
 ```
 
 ### **🧠 Comprehensive Answer Block 3B:**
