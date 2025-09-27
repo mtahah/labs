@@ -208,16 +208,26 @@ echo ""
 
 echo "🔍 WATCH AND LEARN - Creating Organized Namespace Structure:"
 
-# Create namespace with labels for better management
-kubectl create namespace web-apps --dry-run=client -o yaml > namespace.yaml
-echo "labels:" >> namespace.yaml
-echo "  environment: lab" >> namespace.yaml
-echo "  purpose: ingress-demo" >> namespace.yaml
+# Create namespace with labels for better management (corrected YAML structure)
+cat > namespace.yaml << 'EOF'
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: web-apps
+  labels:
+    environment: lab
+    purpose: ingress-demo
+    created-by: kubernetes-lab
+EOF
 
 kubectl apply -f namespace.yaml
 
 echo "📊 NAMESPACE VERIFICATION:"
 kubectl get namespace web-apps -o custom-columns="NAME:.metadata.name,STATUS:.status.phase,LABELS:.metadata.labels" --no-headers
+echo ""
+
+echo "📊 NAMESPACE DETAILS:"
+kubectl describe namespace web-apps | grep -A 5 "Labels:"
 echo ""
 
 echo "🤔 ACTIVE RECALL CHECK:"
