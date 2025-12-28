@@ -9,6 +9,21 @@
 
 ---
 
+## ⚠️ IMPORTANT: Lab Updates from School Assignment
+
+> **This lab contains ALL your school assignment code with critical fixes for Gatekeeper v3.14+ compatibility.**
+
+**What's been fixed automatically:**
+
+1. ✅ **Schema format updated**: `validation.openAPIV3Schema` wrapper added (required since Gatekeeper v3.6, 2021)
+2. ✅ **Webhook command fixed**: `validatingwebhookconfigurations` (was: `validatingadmissionwebhooks`)
+3. ✅ **Registry names updated**: `registry.k8s.io` (was: `k8s.gcr.io` - deprecated)
+4. ✅ **Kubernetes setup added**: Phase 0 installs cluster (school assumes you have one)
+
+**All 6 school tasks included + deep learning enhancements!**
+
+---
+
 ## 🎯 Learning Objectives
 
 **By the end of this lab, you'll be able to:**
@@ -380,7 +395,7 @@ kubectl get crd | grep gatekeeper
 
 echo ""
 echo "▶ Verify webhook configuration"
-kubectl get validatingadmissionwebhooks | grep gatekeeper
+kubectl get validatingwebhookconfigurations | grep gatekeeper
 
 echo ""
 echo "▶ Check Gatekeeper logs"
@@ -391,6 +406,55 @@ kubectl logs -n gatekeeper-system deployment/gatekeeper-controller-manager --tai
 ```bash
 chmod +x task1-subtask3-verify-components.sh
 ./task1-subtask3-verify-components.sh
+```
+
+---
+
+## ⚠️ CRITICAL: Common Errors Fixed in This Lab
+
+> 💡 **Your school assignment's YAML has compatibility issues with Gatekeeper v3.14+. This lab fixes them automatically.**
+
+### Error 1: "unknown field spec.crd.spec.validation.properties"
+
+**Why it happens:**
+- Gatekeeper v3.6+ requires structural schemas
+- Old format: `validation: { type: object, properties: {...} }`
+- **New format**: `validation: { openAPIV3Schema: { type: object, properties: {...} } }`
+
+**What we fixed:**
+All ConstraintTemplates now use `openAPIV3Schema` wrapper (required since 2021).
+
+### Error 2: "error: the server doesn't have a resource type 'validatingadmissionwebhooks'"
+
+**Why it happens:**
+- Typo in resource name (missing 'configurations')
+- Correct: `validatingwebhookconfigurations` (plural)
+
+**What we fixed:**
+Changed `kubectl get validatingadmissionwebhooks` → `kubectl get validatingwebhookconfigurations`
+
+### Error 3: "No resources found" when checking templates
+
+**Why it happens:**
+- Template creation failed due to schema errors (Error 1)
+- Without template, you can't create constraints
+
+**Resolution:**
+Use the corrected YAML files in this lab. All scripts now work with Gatekeeper v3.14+.
+
+---
+
+## 🔍 Verify Your Fixes Worked
+
+```bash
+# Should show your template
+kubectl get constrainttemplates
+
+# Should show webhook config
+kubectl get validatingwebhookconfigurations | grep gatekeeper
+
+# Should show no errors
+kubectl describe constrainttemplate k8srequirenonroot
 ```
 
 ---
@@ -428,6 +492,40 @@ It's the "doorway" through which all resources must pass.
 - **Audit**: Periodic scanning of existing resources (detect drift)
 
 Separation allows scaling them independently based on load.
+</details>
+
+<details>
+<summary><strong>Q4: Why did the school assignment's YAML fail? (CRITICAL LEARNING)</strong></summary>
+
+**The error was:** `unknown field "spec.crd.spec.validation.properties"`
+
+**Root cause:**
+- Gatekeeper v3.6+ (2021) requires **structural schemas**
+- School assignment uses pre-v3.6 format (likely from older tutorial)
+- Missing `openAPIV3Schema` wrapper
+
+**Why structural schemas matter:**
+1. **Type safety**: API server validates data types at admission time
+2. **Better errors**: "Expected array, got string" vs silent failure
+3. **Kubernetes alignment**: Matches CRD v1 requirements (K8s 1.16+)
+
+**Real-world lesson:**
+- API versions evolve (beta → v1)
+- Always check compatibility with installed versions
+- Read release notes when upgrading
+- Test manifests before production deployment
+
+**Quick fix check:**
+```bash
+# If you see this error again
+Error: unknown field "spec.crd.spec.validation.properties"
+
+# Add openAPIV3Schema wrapper
+validation:
+  openAPIV3Schema:    # ← Add this
+    type: object       # ← Ensure this exists
+    properties: ...
+```
 </details>
 
 ---
@@ -483,13 +581,14 @@ spec:
       names:
         kind: K8sRequireNonRoot
       validation:
-        type: object
-        properties:
-          exemptImages:
-            description: "List of exempt container images"
-            type: array
-            items:
-              type: string
+        openAPIV3Schema:
+          type: object
+          properties:
+            exemptImages:
+              description: "List of exempt container images"
+              type: array
+              items:
+                type: string
   targets:
     - target: admission.k8s.gatekeeper.sh
       rego: |
@@ -535,6 +634,45 @@ chmod +x task2-subtask1-root-template.sh
 ---
 
 ## 🔍 Deep Dive: Understanding the Rego Policy
+
+**IMPORTANT:** The YAML structure in this lab differs from your school assignment due to Gatekeeper API changes.
+
+### Schema Evolution
+
+**Old format (pre-v3.6, in your school assignment):**
+```yaml
+spec:
+  crd:
+    spec:
+      validation:
+        type: object
+        properties:
+          exemptImages:
+            type: array
+```
+
+**New format (v3.6+, used in this lab):**
+```yaml
+spec:
+  crd:
+    spec:
+      validation:
+        openAPIV3Schema:    # ← Required wrapper
+          type: object       # ← Required at top level
+          properties:
+            exemptImages:
+              type: array
+```
+
+**Why the change?**
+- Kubernetes requires "structural schemas" for CRDs (since K8s v1.16)
+- Structural schemas must have `type` at every level
+- `openAPIV3Schema` wrapper signals this is a proper structural schema
+- Provides better validation and error messages
+
+---
+
+### Rego Policy Logic Breakdown
 
 Let's break down the policy logic:
 
@@ -639,7 +777,8 @@ spec:
       names:
         kind: K8sRequireNonPrivileged
       validation:
-        type: object
+        openAPIV3Schema:
+          type: object
   targets:
     - target: admission.k8s.gatekeeper.sh
       rego: |
@@ -647,7 +786,7 @@ spec:
 
         violation[{"msg": msg}] {
           container := input.review.object.spec.containers[_]
-          container.securityContext.privileged
+          container.securityContext.privileged == true
           msg := sprintf("Container <%v> cannot run in privileged mode", [container.name])
         }
 EOF
@@ -1177,7 +1316,7 @@ spec:
   parameters:
     exemptImages:
       - "gcr.io/google-containers/"
-      - "k8s.gcr.io/"
+      - "registry.k8s.io/"
 EOF
 
 kubectl apply -f updated-constraint.yaml
@@ -1229,6 +1368,7 @@ spec:
   parameters:
     exemptImages:
       - "gcr.io/google-containers/"
+      - "registry.k8s.io/"
 EOF
 
 kubectl apply -f dry-run-constraint.yaml
@@ -1590,4 +1730,350 @@ chmod +x complete-cleanup.sh
 ---
 
 # 🎓 Conclusion
-In production Kubernetes environments, manual security reviews are insufficient and error-
+
+## Key Achievements
+
+**From your school assignment - Congratulations! You have successfully completed Lab 8: Compliance Automation in Kubernetes. Here's what you accomplished:**
+
+✅ **Policy Engine Mastery**: You installed and configured OPA Gatekeeper, learning how to implement policy-as-code in Kubernetes environments
+
+✅ **Security Policy Implementation**: You created comprehensive security policies that prevent containers from running as root users and prohibit privileged containers
+
+✅ **Automated Compliance**: You implemented automated compliance checking that continuously monitors your cluster and prevents non-compliant workloads
+
+✅ **Testing and Validation**: You learned how to test policy enforcement, handle exemptions, and troubleshoot common policy-related issues
+
+✅ **Real-World Application**: These skills directly apply to enterprise Kubernetes environments where security compliance is critical
+
+✅ **API Compatibility Mastery**: You learned why YAML manifests fail across versions and how to update schemas for structural validation (critical production skill!)
+
+---
+
+## Why This Matters
+
+**From your school assignment:**
+
+In production Kubernetes environments, manual security reviews are insufficient and error-prone. Automated compliance ensures that:
+
+- Security policies are consistently enforced across all deployments
+- Compliance violations are caught early in the deployment pipeline
+- Audit requirements are automatically satisfied through continuous monitoring
+- Development teams receive immediate feedback on security issues
+
+---
+
+## Next Steps
+
+**From your school assignment - To further enhance your Kubernetes security skills:**
+
+1. **Explore advanced Rego policies** for more complex compliance scenarios
+2. **Integrate policy enforcement** with CI/CD pipelines
+3. **Implement policy testing frameworks** for validation before deployment
+4. **Study compliance frameworks** like CIS Kubernetes Benchmark
+5. **Practice with real-world scenarios** involving multiple policy engines
+
+---
+
+## Final Wisdom
+
+**From your school assignment:**
+
+This lab has provided you with essential skills for the **Kubernetes and Cloud Native Security Associate (KCSA)** certification and prepared you for implementing enterprise-grade security governance in Kubernetes clusters.
+
+The automated compliance capabilities you've learned are fundamental to modern **DevSecOps** practices and will serve you well in securing cloud-native applications at scale.
+
+---
+
+# 🏆 Assessment & Deep Learning
+
+## 📝 Learning Journal
+
+**Reflect on your journey:**
+
+**Before the lab:**
+- What did you know about Kubernetes policies?
+- What was your biggest concern?
+
+**During the lab:**
+- What surprised you most?
+- Which concept "clicked" for you?
+- What was most challenging?
+
+**After the lab:**
+- How would you explain Gatekeeper to a colleague?
+- What production scenario would you apply this to?
+- What questions do you still have?
+
+---
+
+## 🧠 Final Active Recall Challenge
+
+<details>
+<summary><strong>Q1: Explain the complete flow from kubectl apply to policy enforcement</strong></summary>
+
+**Complete Flow:**
+
+1. **Developer**: `kubectl apply -f pod.yaml`
+2. **kubectl**: Sends HTTPS request to API server
+3. **API Server**: Receives request, starts admission chain
+4. **Authentication**: Verifies user identity
+5. **Authorization**: Checks RBAC permissions
+6. **Admission Controllers**: 
+   - Mutating webhooks (modify resource)
+   - **Validating webhooks** ← Gatekeeper here
+7. **Gatekeeper Webhook**: Receives admission review request
+8. **OPA Engine**: Evaluates all matching constraints using Rego
+9. **Decision**: 
+   - If violations found → Deny + error message
+   - If compliant → Allow
+10. **API Server**: 
+    - If denied → Return error to kubectl
+    - If allowed → Persist to etcd
+11. **Controller Manager**: Creates actual pod
+12. **Gatekeeper Audit**: Scans periodically for drift
+
+**Key insight**: Gatekeeper acts as a "gate" before resources reach etcd.
+</details>
+
+<details>
+<summary><strong>Q2: Design a complete policy strategy for a multi-tenant cluster</strong></summary>
+
+**Production Policy Strategy:**
+
+**Tier 1 - Foundational Security:**
+- No root containers (we created this!)
+- No privileged containers (we created this!)
+- No host network/PID/IPC
+- Drop all capabilities by default
+
+**Tier 2 - Resource Management:**
+- Require resource limits (CPU/memory)
+- Require resource requests
+- Block resource-intensive init containers
+
+**Tier 3 - Network Security:**
+- Require NetworkPolicies for all namespaces
+- Block host port usage
+- Enforce specific ingress annotations
+
+**Tier 4 - Image Security:**
+- Require image pull secrets
+- Enforce trusted registries only
+- Require image digests (not tags)
+- Block latest tag
+
+**Tier 5 - Compliance:**
+- Require specific labels (team, cost-center)
+- Enforce naming conventions
+- Require pod security standards annotations
+
+**Implementation Plan:**
+1. Deploy all policies in `dryrun` mode
+2. Analyze violation reports for 2 weeks
+3. Educate teams on top violations
+4. Enforce Tier 1, others stay dryrun
+5. Gradual enforcement (1 tier per month)
+6. Provide policy-compliant templates
+</details>
+
+<details>
+<summary><strong>Q3: Troubleshoot this scenario</strong></summary>
+
+**Scenario**: Your teammate says "Gatekeeper is blocking ALL my deployments, even compliant ones!"
+
+**Systematic Troubleshooting:**
+
+**Step 1 - Verify Gatekeeper Health:**
+```bash
+kubectl get pods -n gatekeeper-system
+kubectl logs -n gatekeeper-system deployment/gatekeeper-controller-manager
+```
+Look for: crashes, OOM, errors
+
+**Step 2 - Check Webhook Status:**
+```bash
+kubectl get validatingwebhookconfig gatekeeper-validating-webhook-configuration -o yaml
+```
+Look for: failurePolicy, timeout settings, service endpoint
+
+**Step 3 - Test Specific Resource:**
+```bash
+kubectl apply -f pod.yaml --dry-run=server -v=8
+```
+Look for: which webhook is denying, error message
+
+**Step 4 - Check Constraint Status:**
+```bash
+kubectl get constraints
+kubectl describe <constraint-kind> <constraint-name>
+```
+Look for: enforcementAction, matching criteria, template errors
+
+**Step 5 - Verify Template Logic:**
+```bash
+kubectl describe constrainttemplate <template-name>
+```
+Look for: Rego syntax errors, target mismatches
+
+**Common Causes:**
+- ConstraintTemplate has Rego syntax error → blocks everything
+- Webhook timeout too low → treats timeout as deny
+- Missing namespace exclusions → blocking system pods
+- Template target mismatch → policy not loading
+
+**Resolution:**
+```bash
+# Temporarily set to dryrun
+kubectl patch k8srequirenonroot must-run-as-non-root \
+  --type=merge -p '{"spec":{"enforcementAction":"dryrun"}}'
+
+# Check audit logs
+kubectl describe k8srequirenonroot must-run-as-non-root
+
+# Fix template, reapply
+kubectl apply -f fixed-template.yaml
+
+# Re-enable enforcement
+kubectl patch k8srequirenonroot must-run-as-non-root \
+  --type=merge -p '{"spec":{"enforcementAction":"deny"}}'
+```
+</details>
+
+---
+
+## 🎯 Skills Mastery Checklist
+
+### Foundation Level ✅
+
+- [ ] Installed Kubernetes cluster using KIND
+- [ ] Deployed OPA Gatekeeper successfully  
+- [ ] Created ConstraintTemplates with basic Rego
+- [ ] Applied Constraints to enforce policies
+- [ ] Tested policy enforcement with compliant/non-compliant pods
+- [ ] Used kubectl to inspect Gatekeeper components
+
+### Intermediate Level ✅
+
+- [ ] Understood admission webhook architecture
+- [ ] Wrote Rego policies with violation logic
+- [ ] Configured namespace and image exemptions
+- [ ] Used enforcementAction (deny vs dryrun)
+- [ ] Debugged policy violations
+- [ ] Created compliance monitoring dashboards
+- [ ] Tested policies with Deployments
+
+### Advanced Level ✅
+
+- [ ] Explained complete admission control flow
+- [ ] Designed multi-tier policy strategy
+- [ ] Troubleshot policy enforcement issues
+- [ ] Compared OPA Gatekeeper vs Kyverno
+- [ ] Understood audit vs admission differences
+- [ ] Created production-ready security contexts
+- [ ] Can explain policy-as-code to stakeholders
+
+---
+
+## 📅 Spaced Repetition Schedule
+
+**Day 1 (Today):** ✅ Complete entire lab
+
+**Day 3:** 
+- Recreate one ConstraintTemplate from memory
+- Explain Rego violation logic to someone
+- Review admission webhook flow
+
+**Week 2:**
+- Create a new policy (e.g., require labels)
+- Test it in dryrun mode
+- Write a blog post explaining what you learned
+
+**Month 2:**
+- Design policies for a real application
+- Present policy strategy to team
+- Review CIS Kubernetes Benchmark
+
+**Month 6:**
+- Teach this lab to a colleague
+- Implement in production environment
+- Contribute to OPA Gatekeeper library
+
+---
+
+## 🔗 Additional Resources
+
+**Official Documentation:**
+- OPA Gatekeeper: https://open-policy-agent.github.io/gatekeeper/
+- Gatekeeper Library: https://open-policy-agent.github.io/gatekeeper-library/
+- Rego Language: https://www.openpolicyagent.org/docs/latest/policy-language/
+- Kubernetes Admission Controllers: https://kubernetes.io/docs/reference/access-authn-authz/admission-controllers/
+
+**Hands-On Practice:**
+- OPA Playground: https://play.openpolicyagent.org
+- Kubernetes Security Benchmarks: https://www.cisecurity.org/benchmark/kubernetes
+- KCSA Study Guide: https://github.com/cncf/curriculum
+
+**Community:**
+- OPA Slack: https://openpolicyagent.slack.com
+- Gatekeeper GitHub: https://github.com/open-policy-agent/gatekeeper
+
+---
+
+## 🎉 Congratulations!
+
+You've completed a comprehensive hands-on lab covering:
+
+✅ **Kubernetes cluster setup** from scratch  
+✅ **All 6 tasks** from your school assignment  
+✅ **Deep conceptual understanding** through active recall  
+✅ **Production-ready skills** for policy-as-code  
+
+**You are now equipped to:**
+- Implement automated compliance in Kubernetes
+- Write Rego policies for security enforcement
+- Troubleshoot policy violations
+- Design enterprise policy strategies
+- Pass KCSA certification questions on admission control
+
+**Keep practicing, keep learning, and keep securing those clusters!** 🚀🔒
+
+---
+
+## 📋 Quick Reference Commands
+
+```bash
+# Cluster Management
+kind create cluster --name gatekeeper-lab
+kind delete cluster --name gatekeeper-lab
+kubectl cluster-info
+kubectl get nodes
+
+# Gatekeeper Status
+kubectl get pods -n gatekeeper-system
+kubectl get constrainttemplates
+kubectl get constraints
+kubectl logs -n gatekeeper-system deployment/gatekeeper-controller-manager
+
+# Policy Management
+kubectl apply -f constraint-template.yaml
+kubectl apply -f constraint.yaml
+kubectl describe constrainttemplate <name>
+kubectl describe k8srequirenonroot <name>
+
+# Testing
+kubectl apply -f pod.yaml --dry-run=server
+kubectl run test --image=nginx --dry-run=server
+
+# Compliance Monitoring
+./compliance-check.sh
+kubectl get k8srequirenonroot must-run-as-non-root -o yaml
+
+# Troubleshooting
+kubectl get validatingwebhookconfig
+kubectl describe validatingwebhookconfig gatekeeper-validating-webhook-configuration
+./troubleshoot.sh
+```
+
+---
+
+**End of Lab** 🎓
